@@ -64,11 +64,25 @@ type Verse = {
     bookId: Book['id']
     chapterNumber: Chapter['number']
     number: number
-    text: string
-    section?: Section
-    paragraph?: string
+    text: (_Text | Section | Paragraph | Quote)[]
 }
 
 type Section = {
+    type: 'section'
+    text: string
+}
+
+type _Text = {
+    type: 'text'
+    text: string
+}
+
+type Paragraph = {
+    type: 'paragraph'
+    text: string
+}
+
+type Quote = {
+    type: 'quote'
     text: string
 }
