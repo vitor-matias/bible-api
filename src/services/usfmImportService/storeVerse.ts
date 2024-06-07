@@ -10,7 +10,7 @@ export const storeVerse = async (client: ReturnType<typeof createClient>, bookId
             verseData.text.push({ type: 'quote', text: verseObject.text ?? '' })
         }
         else if (verseObject.type === 'paragraph' && (verseObject.nextChar || verseObject.text)) {
-            verseData.text.push({ type: 'paragraph', text: verseObject.nextChar || verseObject.text || '' })
+            verseData.text.push({ type: 'paragraph', text: (verseObject.nextChar ?? verseObject.text) ?? '' })
         }
         else if (verseObject.type === 'section') {
             verseData.text.push({ type: 'section', text: verseObject.content?.replace(/[*\n]/g, '') ?? '' })
