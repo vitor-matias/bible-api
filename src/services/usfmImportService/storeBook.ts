@@ -3,9 +3,9 @@ import { storeChapter } from "./storeChapter"
 import { getBookId } from "../book/getBookId"
 import { getBookHeader } from "../book/getBookHeader"
 
-export const storeBook = async (book: USFMBook): Promise<void> => {
+export const storeBook = async (usfmBook: USFMBook): Promise<void> => {
 
-    const bookId = getBookId(book)?.toLowerCase()
+    const bookId = getBookId(usfmBook)?.toLowerCase()
 
     if (bookId) {
         const client = createClient()
@@ -13,17 +13,20 @@ export const storeBook = async (book: USFMBook): Promise<void> => {
 
         await client.rPush('books', bookId)
 
-        const bookName = getBookHeader(book, 'toc1')
-        const bookAbrv = getBookHeader(book, 'toc3')
+        const bookName = getBookHeader(usfmBook, 'toc1')
+        const bookAbrv = getBookHeader(usfmBook, 'toc3')
 
-        if (bookName && bookAbrv) {
-            Promise.all([
-                await client.set(`book:${bookId}:toc1`, bookName),
-                await client.set(`book:${bookId}:toc3`, bookAbrv)
-            ])
+        const book: Book = {
+            id: bookId,
+            name: bookName ?? '',
+            shortName: bookAbrv ?? '',
+            chapterCount: Object.keys(usfmBook.chapters).length,
         }
 
-        Object.entries(book.chapters).forEach(async ([number, chapter]) => {
+        await client.set(`book:${bookId}`, JSON.stringify(book))
+
+
+        Object.entries(usfmBook.chapters).forEach(async ([number, chapter]) => {
             await storeChapter(client, bookId, parseInt(number), chapter)
         })
 

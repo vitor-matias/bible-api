@@ -5,6 +5,7 @@ import fs from 'fs'
 import { flushDatabase } from './util/flushDatabase'
 import setEndpoints from './rest'
 
+require('dotenv').config()
 
 const app = express()
 const port = 3000
@@ -19,8 +20,8 @@ async function loadFilesIntoMemory() {
 
         flushDatabase()
 
-        const filePath = '../portuguese-capuchine-translation/usfm-nv/' // Change this to the path of your USFM file
-
+        const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
+        console.log(filePath)
         const files = fs.readdirSync(filePath)
 
         files.forEach(async file => {
@@ -33,7 +34,6 @@ async function loadFilesIntoMemory() {
         console.log("load complete")
     }
 }
-
 
 setEndpoints(app)
 

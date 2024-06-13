@@ -50,6 +50,8 @@ type USFMVerseObject = {
 type Book = {
     id: string
     name: string
+    shortName: string
+    chapterCount: number
     chapters?: Chapter[]
 }
 

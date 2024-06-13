@@ -7,11 +7,9 @@ export const getBooksController = async (req: Request, res: Response) => {
     const client = createClient();
     await client.connect();
 
-    const bookList = await Promise.all((await client.lRange('books', 0, -1)).map(async (bookId) =>
-        await getBook(bookId)
-    ))
-
-    console.log(bookList)
+    const bookList = (await client.lRange('books', 0, -1)).map(async (bookId) =>{
+       await getBook(bookId)
+    })
 
     res.json(bookList)
 }
