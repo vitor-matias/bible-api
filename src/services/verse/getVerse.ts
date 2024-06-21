@@ -6,5 +6,7 @@ export const getVerse = async (bookId: Book['id'], chapterNumber: Chapter['numbe
 
     const verseData = await client.get(`verse:${bookId}:${chapterNumber}:${verseNumber}`)
 
+    client.disconnect()
+
     return verseData ? JSON.parse(verseData) : null
 }

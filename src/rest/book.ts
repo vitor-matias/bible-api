@@ -11,5 +11,7 @@ export const getBooksController = async (req: Request, res: Response) => {
        await getBook(bookId)
     })
 
+    client.disconnect()
+
     res.json(bookList)
 }

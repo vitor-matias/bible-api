@@ -16,6 +16,8 @@ export const getChapter = async (bookId: Book['id'], chapterNumber: Chapter['num
         }
     }
 
+    client.disconnect()
+
     return { bookId, number: chapterNumber, verses }
 
 }
