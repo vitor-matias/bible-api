@@ -6,5 +6,7 @@ export const getBook = async (bookId: Book['id'], getChapters = false): Promise<
 
     const book = await client.get(`book:${bookId}`)
 
+    await client.quit()
+
     return book ? JSON.parse(book) : null
 }

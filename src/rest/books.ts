@@ -11,7 +11,7 @@ export const getBooksController = async (req: Request, res: Response) => {
         await getBook(bookId)
     ))
 
-    client.disconnect()
+    await client.quit()
 
     console.log(bookList)
 
