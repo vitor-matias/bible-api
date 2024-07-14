@@ -38,7 +38,7 @@ type Text = {
 };
 
 type USFMVerseObject = {
-    tag?: char;
+    tag?: string;
     type: string;
     content?: string;
     endTag?: string;
@@ -66,7 +66,7 @@ type Verse = {
     bookId: Book['id']
     chapterNumber: Chapter['number']
     number: number
-    text: (_Text | Section | Paragraph | Quote)[]
+    text: (_Text | Section | Paragraph | Quote | References)[]
 }
 
 type Section = {
@@ -86,5 +86,11 @@ type Paragraph = {
 
 type Quote = {
     type: 'quote'
+    text: string
+    identLevel: number
+}
+
+type References = {
+    type: 'references'
     text: string
 }

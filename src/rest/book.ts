@@ -1,17 +1,18 @@
-import { createClient } from "redis";
 import { Request, Response } from 'express'
 import { getBook } from "../services/book/getBook";
 
 
-export const getBooksController = async (req: Request, res: Response) => {
-    const client = createClient();
-    await client.connect();
+export const getBookController = async (req: Request, res: Response) => {
+    const { client } = res.locals
 
-    const bookList = (await client.lRange('books', 0, -1)).map(async (bookId) =>{
-       await getBook(bookId)
-    })
+    const { book } = req.params
 
-    await client.quit()
+    const data = await getBook(client, book, true)
 
-    res.json(bookList)
+    if (data) {
+        return res.json(data)
+    }
+
+
+    res.status(404).json({ error: 'Book not found' })
 }

@@ -1,8 +1,6 @@
-import { createClient } from "redis";
+import { createClient } from "redis"
 
-export const getChapter = async (bookId: Book['id'], chapterNumber: Chapter['number']): Promise<Chapter> => {
-    const client = createClient();
-    await client.connect();
+export const getChapter = async (client: ReturnType<typeof createClient>, bookId: Book['id'], chapterNumber: Chapter['number']): Promise<Chapter> => {
 
     const versesToFetch = await client.keys(`verse:${bookId}:${chapterNumber}:*`)
     const verses: Verse[] = []
@@ -12,11 +10,9 @@ export const getChapter = async (bookId: Book['id'], chapterNumber: Chapter['num
 
         if (verse) {
             const verseObject: Verse = JSON.parse(verse)
-            verses[verseObject.number - 1] = verseObject
+            verses[verseObject.number] = verseObject
         }
     }
-
-    await client.quit()
 
     return { bookId, number: chapterNumber, verses }
 

@@ -8,7 +8,7 @@ import setEndpoints from './rest'
 require('dotenv').config()
 
 const app = express()
-const port = 3000
+const port = process.env.PORT
 
 let filesLoaded: boolean
 
