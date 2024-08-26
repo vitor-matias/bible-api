@@ -1,6 +1,6 @@
 import type { createClient } from "redis"
 
-export const getChapter = async (
+export const getChapterOnlySections = async (
   client: ReturnType<typeof createClient>,
   bookId: Book["id"],
   chapterNumber: Chapter["number"],
@@ -13,7 +13,14 @@ export const getChapter = async (
 
     if (verse) {
       const verseObject: Verse = JSON.parse(verse)
-      verses[verseObject.number] = verseObject
+
+      verseObject.text = verseObject.text.filter(
+        (text) => text.type === "section",
+      )
+
+      if (verseObject.text.length > 0) {
+        verses.push(verseObject)
+      }
     }
   }
 
