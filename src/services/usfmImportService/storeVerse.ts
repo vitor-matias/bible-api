@@ -40,7 +40,7 @@ export const storeVerse = async (
 				type: "paragraph",
 				text: verseObject.nextChar ?? verseObject.text ?? "",
 			})
-		} else if (verseObject.type === "section") {
+		} else if (verseObject.type === "section" || verseObject.tag === 'ms') {
 			verseData.text.push({
 				type: "section",
 				tag: verseObject.tag ?? "s2",

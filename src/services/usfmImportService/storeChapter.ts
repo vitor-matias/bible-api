@@ -29,7 +29,7 @@ export const storeChapter = async (
   for (const [verseLabel, verse] of Object.entries(chapter).sort(
     compareVerseLabels,
   )) {
-    if (verse.verseObjects.some((verseObject) => verseObject.tag === "va")) {
+    if (verse.verseObjects.some((verseObject) => verseObject.tag === "ms")) {
       console.log(bookCode)
       console.log(chapterNumber)
       console.log(verse.verseObjects)
