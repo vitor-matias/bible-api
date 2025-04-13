@@ -1,7 +1,7 @@
 import {
   type FeatureExtractionPipeline,
-  pipeline,
   type Tensor,
+  pipeline,
 } from "@huggingface/transformers"
 
 let extractor:

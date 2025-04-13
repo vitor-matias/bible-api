@@ -10,6 +10,12 @@ export const searchVersesController = async (req: Request, res: Response) => {
   if (semantic === "true") {
     res.json(null) //TODO
   } else {
-    res.json(await searchVerses(client, text as string, Number.parseInt(page as string, 10)))
+    res.json(
+      await searchVerses(
+        client,
+        text as string,
+        Number.parseInt(page as string, 10),
+      ),
+    )
   }
 }

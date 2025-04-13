@@ -69,7 +69,7 @@ export const storeVerse = async (
     "$",
     verseData,
   )
- /*  if (verseNumber > 0) {
+  /*  if (verseNumber > 0) {
     await generateEmbedding(
       verseData.text
         .filter(

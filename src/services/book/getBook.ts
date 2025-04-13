@@ -1,6 +1,6 @@
 import type { createClient } from "redis"
-import { getChapter } from "../chapter/getChapter"
 import { getBookChapterTitle } from "../chapter/getBookChapterTitle"
+import { getChapter } from "../chapter/getChapter"
 
 export const getBook = async (
   client: ReturnType<typeof createClient>,
