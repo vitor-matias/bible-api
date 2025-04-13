@@ -1,6 +1,5 @@
 import type { Request, Response } from "express"
 import { searchVerses } from "../services/search/searchVerses"
-import { semanticSearchVerses } from "../services/search/semanticSearchVerses"
 
 export const searchVersesController = async (req: Request, res: Response) => {
   const { client } = res.locals

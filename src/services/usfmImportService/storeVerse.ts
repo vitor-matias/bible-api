@@ -1,5 +1,4 @@
 import type { createClient } from "redis"
-import { generateEmbedding } from "../../util/generateEmbeddings"
 import { getVerse } from "../verse/getVerse"
 
 export const storeVerse = async (
