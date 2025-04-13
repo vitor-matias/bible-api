@@ -5,7 +5,7 @@ export const getVerse = async (
   bookId: Book["id"],
   chapterNumber: Chapter["number"],
   verseNumber: Verse["number"],
-): Promise<Verse> => {
+): Promise<Verse | null> => {
   return getVerseByKey(
     client,
     `verse:${bookId}:${chapterNumber}:${verseNumber}`,
@@ -15,11 +15,11 @@ export const getVerse = async (
 export const getVerseByKey = async (
   client: ReturnType<typeof createClient>,
   key: string,
-): Promise<Verse> => {
+): Promise<Verse | null> => {
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   const result: any = await client.json.get(key)
   if (!result) {
-    return result as Verse
+    return null
   }
   const verseData = result
 

@@ -5,7 +5,7 @@ import { getVerseByKey } from "../verse/getVerse"
 export const semanticSearchVerses = async (
   client: ReturnType<typeof createClient>,
   search: string,
-): Promise<Verse[]> => {
+): Promise<(Verse | null)[]> => {
   const tensor = await generateEmbedding(search)
 
   const arr = tensor.tolist()[0]
@@ -30,7 +30,7 @@ export const semanticSearchVerses = async (
   console.warn(`Found ${results.total} results`)
 
   return await Promise.all(
-    results.documents.map(async (document): Promise<Verse> => {
+    results.documents.map(async (document): Promise<Verse | null> => {
       console.warn(`Found matching verse: ${document.value.key as string}`)
       return await getVerseByKey(client, document.value.key as string)
     }),

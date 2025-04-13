@@ -15,7 +15,13 @@ export const storeVerse = async (
     bookId,
     chapterNumber,
     verseNumber,
-  )) || { bookId, chapterNumber, number: verseNumber, text: [], verseLabel }
+  )) || {
+    bookId,
+    chapterNumber,
+    number: verseNumber,
+    text: [],
+    numberLabel: verseLabel,
+  }
 
   verseObjects.forEach(async (verseObject, i) => {
     if (
