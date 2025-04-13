@@ -1,14 +1,27 @@
 import type { createClient } from "redis"
 
 export const getVerse = async (
-	client: ReturnType<typeof createClient>,
-	bookId: Book["id"],
-	chapterNumber: Chapter["number"],
-	verseNumber: Verse["number"],
-): Promise<Verse> => {
-	const verseData = await client.get(
-		`verse:${bookId}:${chapterNumber}:${verseNumber}`,
-	)
+  client: ReturnType<typeof createClient>,
+  bookId: Book["id"],
+  chapterNumber: Chapter["number"],
+  verseNumber: Verse["number"],
+): Promise<Verse | null> => {
+  return getVerseByKey(
+    client,
+    `verse:${bookId}:${chapterNumber}:${verseNumber}`,
+  )
+}
 
-	return verseData ? JSON.parse(verseData) : null
+export const getVerseByKey = async (
+  client: ReturnType<typeof createClient>,
+  key: string,
+): Promise<Verse | null> => {
+  // biome-ignore lint/suspicious/noExplicitAny: <explanation>
+  const result: any = await client.json.get(key)
+  if (!result) {
+    return null
+  }
+  const verseData = result
+
+  return verseData as Verse
 }

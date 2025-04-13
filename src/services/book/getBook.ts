@@ -1,17 +1,15 @@
 import type { createClient } from "redis"
+import { getBookChapterTitle } from "../chapter/getBookChapterTitle"
 import { getChapter } from "../chapter/getChapter"
-//import { getChapterOnlySections } from "../chapter/getChapterOnlySections"
 
 export const getBook = async (
   client: ReturnType<typeof createClient>,
   bookId: Book["id"],
   getChapters = false,
 ): Promise<Book | null> => {
-  const bookText = await client.get(`book:${bookId}`)
+  const book = (await client.json.get(`book:${bookId}`)) as Book
 
-  if (!bookText) return null
-
-  const book: Book = JSON.parse(bookText)
+  if (!book) return null
 
   book.chapters = []
 
@@ -20,9 +18,9 @@ export const getBook = async (
       book.chapters.push(await getChapter(client, bookId, i))
     }
   } else {
-    //for (let i = 1; i <= book.chapterCount; i++) {
-      //book.chapters.push(await getChapterOnlySections(client, bookId, i))
-    //}
+    for (let i = 1; i <= book.chapterCount; i++) {
+      book.chapters.push(await getBookChapterTitle(client, bookId, i))
+    }
   }
   return book
 }
