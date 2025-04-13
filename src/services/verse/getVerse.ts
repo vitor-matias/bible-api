@@ -19,7 +19,7 @@ export const getVerseByKey = async (
   // biome-ignore lint/suspicious/noExplicitAny: <explanation>
   const result: any = await client.json.get(key)
   if (!result) {
-    return result
+    return result as Verse
   }
   const verseData = result
 
