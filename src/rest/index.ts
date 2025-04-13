@@ -1,6 +1,6 @@
 import type express from "express"
-import type { NextFunction, Request, Response } from "express"
 import { createClient } from "redis"
+import { checkCache } from "../middleware/checkCache"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
@@ -18,44 +18,6 @@ export default (app: express.Express): void => {
     res.locals.client = client
     next()
   })
-
-  const checkCache = async (
-    req: Request,
-    res: Response,
-    next: NextFunction,
-  ) => {
-    const { url } = req
-    try {
-      const cachedResponse = await client.json.get(url)
-      if (cachedResponse != null && !url.includes("/v1/search")) {
-        console.log("Cache hit")
-        res.send(cachedResponse)
-      } else {
-        console.log("Cache miss")
-
-        // Store the original send function
-        const originalSend = res.send.bind(res)
-
-        // Override the send function
-        res.send = (body) => {
-          // Cache the response
-          client.json.set(url, "$", body).catch((err) => {
-            console.error(`Error setting cache: ${err}`)
-          })
-
-          client.expire(url, 86400)
-
-          // Call the original send function
-          return originalSend(body)
-        }
-
-        next()
-      }
-    } catch (error) {
-      console.error(`Error in checkCache middleware: ${error}`)
-      next()
-    }
-  }
 
   // Endpoint to get a specific verse
   app.get("/v1/:book/:chapter/:verse", checkCache, getVerseController)
