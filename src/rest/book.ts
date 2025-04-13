@@ -6,7 +6,9 @@ export const getBookController = async (req: Request, res: Response) => {
 
   const { book } = req.params
 
-  const data = await getBook(client, book, true)
+  const { withVerses } = req.query
+
+  const data = await getBook(client, book, withVerses === "true")
 
   if (data) {
     return res.json(data)

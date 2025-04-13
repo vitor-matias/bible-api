@@ -2,53 +2,53 @@ import type { Request, Response } from "express"
 import { getVerse } from "../services/verse/getVerse"
 
 export const getVerseController = async (req: Request, res: Response) => {
-	const { book, chapter, verse } = req.params
+  const { book, chapter, verse } = req.params
 
-	const { client } = res.locals
+  const { client } = res.locals
 
-	const verseData = await getVerse(
-		client,
-		book,
-		Number.parseInt(chapter),
-		Number.parseInt(verse),
-	)
-	if (verseData) {
-		return res.json(verseData)
-	}
+  const verseData = await getVerse(
+    client,
+    book,
+    Number.parseInt(chapter),
+    Number.parseInt(verse),
+  )
+  if (verseData) {
+    return res.json(verseData)
+  }
 
-	res.status(404).json({ error: "Verse not found" })
+  res.status(404).json({ error: "Verse not found" })
 }
 
 export const getVersesController = async (req: Request, res: Response) => {
-	const { book, chapter, startVerse, endVerse } = req.params
-	const { client } = res.locals
+  const { book, chapter, startVerse, endVerse } = req.params
+  const { client } = res.locals
 
-	if (Number.parseInt(startVerse) > Number.parseInt(endVerse)) {
-		let currentVerse = Number.parseInt(startVerse)
+  if (Number.parseInt(startVerse) > Number.parseInt(endVerse)) {
+    let currentVerse = Number.parseInt(startVerse)
 
-		const verseData = []
+    const verseData = []
 
-		while (currentVerse <= Number.parseInt(endVerse)) {
-			const data = await getVerse(
-				client,
-				book,
-				Number.parseInt(chapter),
-				currentVerse,
-			)
+    while (currentVerse <= Number.parseInt(endVerse)) {
+      const data = await getVerse(
+        client,
+        book,
+        Number.parseInt(chapter),
+        currentVerse,
+      )
 
-			if (!data) {
-				break
-			}
+      if (!data) {
+        break
+      }
 
-			verseData.push(data)
+      verseData.push(data)
 
-			currentVerse++
-		}
+      currentVerse++
+    }
 
-		if (verseData) {
-			return res.json(verseData)
-		}
-	}
+    if (verseData) {
+      return res.json(verseData)
+    }
+  }
 
-	res.status(404).json({ error: "Verse not found" })
+  res.status(404).json({ error: "Verse not found" })
 }

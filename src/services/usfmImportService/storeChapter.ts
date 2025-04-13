@@ -30,9 +30,6 @@ export const storeChapter = async (
     compareVerseLabels,
   )) {
     if (verse.verseObjects.some((verseObject) => verseObject.tag === "ms")) {
-      console.log(bookCode)
-      console.log(chapterNumber)
-      console.log(verse.verseObjects)
 
       let objectsForVerse: USFMVerseObject[] = []
       verseNumber = verseLabel === "front" ? 0 : verseNumber

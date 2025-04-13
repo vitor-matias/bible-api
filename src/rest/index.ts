@@ -4,6 +4,7 @@ import { createClient } from "redis"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
+import { searchVersesController } from "./search"
 import { getVerseController, getVersesController } from "./verses"
 
 export default (app: express.Express): void => {
@@ -11,7 +12,7 @@ export default (app: express.Express): void => {
 
   app.use(async (req, res, next) => {
     if (!client || !client.isReady) {
-      client = createClient()
+      client = createClient({ url: process.env.DB_URL })
       await client.connect()
     }
     res.locals.client = client
@@ -25,10 +26,10 @@ export default (app: express.Express): void => {
   ) => {
     const { url } = req
     try {
-      const cachedResponse = await client.get(url)
-      if (cachedResponse != null) {
+      const cachedResponse = await client.json.get(url)
+      if (cachedResponse != null && !url.includes("/v1/search")) {
         console.log("Cache hit")
-        res.send(JSON.parse(cachedResponse))
+        res.send(cachedResponse)
       } else {
         console.log("Cache miss")
 
@@ -38,7 +39,7 @@ export default (app: express.Express): void => {
         // Override the send function
         res.send = (body) => {
           // Cache the response
-          client.set(url, JSON.stringify(body)).catch((err) => {
+          client.json.set(url, "$", body).catch((err) => {
             console.error(`Error setting cache: ${err}`)
           })
 
@@ -63,6 +64,7 @@ export default (app: express.Express): void => {
   app.get("/v1/:book/:chapter/:startVerse/:endVerse", getVersesController)
 
   app.get("/v1/books", getBooksController)
+  app.get("/v1/search", checkCache, searchVersesController)
 
   app.get("/v1/:book/:chapter", getChapterController)
 

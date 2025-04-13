@@ -13,12 +13,11 @@ export const getChapter = async (
   }
 
   for (const key of versesToFetch) {
-    const verse = await client.get(key)
+    const verseData = await client.json.get(key)
+    const verse = verseData ? (verseData as Verse) : null
 
     if (verse) {
-      const verseObject: Verse = JSON.parse(verse)
-      verses[verseObject.number] = verseObject
-      
+      verses[verse.number] = verse
     }
   }
 

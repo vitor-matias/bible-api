@@ -12,12 +12,20 @@ const port = process.env.PORT
 
 let filesLoaded: boolean
 
+setEndpoints(app)
+
+// Start the server
+app.listen(port, () => {
+  console.info(`Server is up and running at http://localhost:${port}`)
+})
+
 loadFilesIntoMemory()
 
 // Middleware to load the Bible data into memory
 async function loadFilesIntoMemory() {
+  const start = Date.now()
   if (!filesLoaded) {
-    flushDatabase()
+    await flushDatabase()
 
     const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
     console.log(filePath)
@@ -25,20 +33,19 @@ async function loadFilesIntoMemory() {
       .readdirSync(filePath)
       .filter((file) => file.endsWith(".usfm"))
 
-    for (const file of files) {
-      console.log(file)
-      const bibleData = await readBook(filePath + file)
-      await storeBook(bibleData)
+    const chunkSize = 5
+    for (let i = 0; i < files.length; i += chunkSize) {
+      const chunk = files.slice(i, i + chunkSize)
+      await Promise.all(
+        chunk.map(async (file) => {
+          console.log(file)
+          const bibleData = await readBook(filePath + file)
+          await storeBook(bibleData)
+        }),
+      )
     }
 
     filesLoaded = true
-    console.log("load complete")
+    console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
   }
 }
-
-setEndpoints(app)
-
-// Start the server
-app.listen(port, () => {
-  console.info(`Server is up and running at http://localhost:${port}`)
-})
