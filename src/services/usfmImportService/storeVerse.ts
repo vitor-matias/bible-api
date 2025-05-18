@@ -51,15 +51,15 @@ export const storeVerse = async (
     } else if (verseObject.type === "section" || verseObject.tag === "ms") {
       const text = verseObject.content?.replace(/[*\n]/g, "") ?? ""
 
-      if (verseObject.type === "section") {
-        await saveChapterTitle(client, bookId, chapterNumber, text)
-      }
-
       verseData.text.push({
         type: "section",
         tag: verseObject.tag ?? "s2",
         text,
       })
+
+      if (verseObject.type === "section") {
+        await saveChapterTitle(client, bookId, chapterNumber, text)
+      }
     } else if (verseObject.tag === "r") {
       const text = verseObject.content?.replace(/[*\n]/g, "") ?? ""
       verseData.text.push({
