@@ -68,6 +68,7 @@ type Verse = {
   number: number
   numberLabel: string
   text: (_Text | Section | Paragraph | Quote | References)[]
+  searchId: string
 }
 
 type Section = {

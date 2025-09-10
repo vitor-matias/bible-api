@@ -1,7 +1,4 @@
 import type { NextFunction, Request, Response } from "express"
-import { createClient } from "redis"
-import { RedisClientType } from "redis"
-import { createClient as createRedisClient } from "redis"
 
 export const checkCache = async (
   req: Request,
@@ -12,7 +9,7 @@ export const checkCache = async (
   const { client } = res.locals
   try {
     const cachedResponse = await client.json.get(url)
-    if (cachedResponse != null && !url.includes("/v1/search")) {
+    if (cachedResponse != null) {
       console.log("Cache hit")
       res.send(cachedResponse)
     } else {

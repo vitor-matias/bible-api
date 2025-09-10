@@ -15,7 +15,7 @@ export const storeBook = async (usfmBook: USFMBook): Promise<void> => {
     })
     await client.connect()
 
-    await client.rPush("books", bookId)
+    const bookCount = await client.rPush("books", bookId)
 
     const bookName = getBookHeader(usfmBook, "toc1")
     const bookShortName = getBookHeader(usfmBook, "toc2")
@@ -32,7 +32,13 @@ export const storeBook = async (usfmBook: USFMBook): Promise<void> => {
     await client.json.set(`book:${bookId}`, "$", book)
 
     for (const [number, chapter] of Object.entries(usfmBook.chapters)) {
-      await storeChapter(client, bookId, Number.parseInt(number), chapter)
+      await storeChapter(
+        client,
+        bookId,
+        bookCount,
+        Number.parseInt(number, 10),
+        chapter,
+      )
     }
     await client.quit()
   }

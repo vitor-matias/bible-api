@@ -33,7 +33,7 @@ async function loadFilesIntoMemory() {
       .readdirSync(filePath)
       .filter((file) => file.endsWith(".usfm"))
 
-    const chunkSize = 5
+    const chunkSize = 1
     for (let i = 0; i < files.length; i += chunkSize) {
       const chunk = files.slice(i, i + chunkSize)
       await Promise.all(

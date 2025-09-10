@@ -4,11 +4,13 @@ import { getVerse } from "../verse/getVerse"
 export const storeVerse = async (
   client: ReturnType<typeof createClient>,
   bookId: string,
+  bookNumber: number,
   chapterNumber: number,
   verseNumber: number,
   verseLabel: string,
   verseObjects: USFMVerseObject[],
 ): Promise<void> => {
+  const searchId = `${String(bookNumber).padStart(2, "0")}-${String(chapterNumber).padStart(3, "0")}-${String(verseNumber).padStart(3, "0")}`
   const verseData: Verse = (await getVerse(
     client,
     bookId,
@@ -16,13 +18,14 @@ export const storeVerse = async (
     verseNumber,
   )) || {
     bookId,
+    searchId,
     chapterNumber,
     number: verseNumber,
     text: [],
     numberLabel: verseLabel,
   }
 
-  verseObjects.forEach(async (verseObject, i) => {
+  for (const verseObject of verseObjects) {
     if (
       (verseObject.type === "text" || verseObject?.tag === "nd") &&
       verseObject.text
@@ -37,7 +40,7 @@ export const storeVerse = async (
       verseData.text.push({
         type: "quote",
         text,
-        identLevel: Number.parseInt(verseObject.tag?.split("q")[1] ?? "1"),
+        identLevel: Number.parseInt(verseObject.tag?.split("q")[1] ?? "1", 10),
       })
     } else if (
       verseObject.type === "paragraph" &&
@@ -58,7 +61,13 @@ export const storeVerse = async (
       })
 
       if (verseObject.type === "section") {
-        await saveChapterTitle(client, bookId, chapterNumber, text)
+        await saveChapterTitle(
+          client,
+          bookId,
+          chapterNumber,
+          text,
+          verseObject.tag === "s1",
+        )
       }
     } else if (verseObject.tag === "r") {
       const text = verseObject.content?.replace(/[*\n]/g, "") ?? ""
@@ -67,7 +76,7 @@ export const storeVerse = async (
         text,
       })
     }
-  })
+  }
 
   await client.json.set(
     `verse:${bookId}:${chapterNumber}:${verseNumber}`,
@@ -102,12 +111,13 @@ export const saveChapterTitle = async (
   bookId: string,
   chapterNumber: number,
   title: string,
+  overlap = false,
 ) => {
   const currentTitle = await client.get(
     `chapterTitle:${bookId}:${chapterNumber}`,
   )
 
-  if (!currentTitle) {
+  if (!currentTitle || overlap) {
     await client.set(`chapterTitle:${bookId}:${chapterNumber}`, title)
   }
 }
