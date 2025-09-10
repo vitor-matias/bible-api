@@ -5,7 +5,11 @@ export const getChapterController = async (req: Request, res: Response) => {
   const { book, chapter } = req.params
   const { client } = res.locals
   try {
-    const chapterData = await getChapter(client, book, Number.parseInt(chapter))
+    const chapterData = await getChapter(
+      client,
+      book,
+      Number.parseInt(chapter, 10),
+    )
     if (chapterData) {
       return res.json(chapterData)
     }

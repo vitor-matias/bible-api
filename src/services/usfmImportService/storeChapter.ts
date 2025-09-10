@@ -7,7 +7,7 @@ const compareVerseLabels = (
 ): number => {
   const parseKey = (key: string) => {
     // Handle numeric parts, taking the first part if it's a compound key like "8-9"
-    const numPart = Number.parseInt(key.split("-")[0])
+    const numPart = Number.parseInt(key.split("-")[0], 10)
     // If it's not a number (like "front"), return Infinity to sort it first
     return Number.isNaN(numPart) ? Number.NEGATIVE_INFINITY : numPart
   }
@@ -21,6 +21,7 @@ const compareVerseLabels = (
 export const storeChapter = async (
   client: ReturnType<typeof createClient>,
   bookCode: string,
+  bookNumber: number,
   chapterNumber: number,
   chapter: USFMChapter,
 ): Promise<void> => {
@@ -40,6 +41,7 @@ export const storeChapter = async (
             await storeVerse(
               client,
               bookCode,
+              bookNumber,
               chapterNumber,
               verseNumber,
               labelForVerse,
@@ -59,6 +61,7 @@ export const storeChapter = async (
         await storeVerse(
           client,
           bookCode,
+          bookNumber,
           chapterNumber,
           verseNumber,
           labelForVerse,
@@ -70,6 +73,7 @@ export const storeChapter = async (
       await storeVerse(
         client,
         bookCode,
+        bookNumber,
         chapterNumber,
         verseNumber,
         verseLabel,
@@ -80,6 +84,7 @@ export const storeChapter = async (
       await storeVerse(
         client,
         bookCode,
+        bookNumber,
         chapterNumber,
         0,
         verseLabel,
@@ -88,6 +93,14 @@ export const storeChapter = async (
     }
   }
   if (chapter.front === null) {
-    await storeVerse(client, bookCode, chapterNumber, 0, "front", [])
+    await storeVerse(
+      client,
+      bookCode,
+      bookNumber,
+      chapterNumber,
+      0,
+      "front",
+      [],
+    )
   }
 }

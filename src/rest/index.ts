@@ -10,7 +10,7 @@ import { getVerseController, getVersesController } from "./verses"
 export default (app: express.Express): void => {
   let client: ReturnType<typeof createClient>
 
-  app.use(async (req, res, next) => {
+  app.use(async (_req, res, next) => {
     if (!client || !client.isReady) {
       client = createClient({ url: process.env.DB_URL })
       await client.connect()
