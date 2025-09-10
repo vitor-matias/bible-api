@@ -10,7 +10,7 @@ export const searchVerses = async (
 
   const offset = (page - 1) * pageSize
 
-  // Add filter for number > 1 in the RediSearch query
+  // Add filter for number >= 1 in the RediSearch query
   const results = (await client.ft.SEARCH(
     "idx:verseText",
     `@text: "${search}" @number:[1 +inf]`,
@@ -24,7 +24,7 @@ export const searchVerses = async (
         DIRECTION: "ASC",
       },
     },
-  )) as SearchReply | null
+  )) as SearchReply
 
   if (!results) {
     return {
