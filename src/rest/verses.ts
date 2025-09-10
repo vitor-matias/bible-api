@@ -23,7 +23,7 @@ export const getVersesController = async (req: Request, res: Response) => {
   const { book, chapter, startVerse, endVerse } = req.params
   const { client } = res.locals
 
-  if (Number.parseInt(startVerse, 10) > Number.parseInt(endVerse, 10)) {
+  if (Number.parseInt(startVerse, 10) <= Number.parseInt(endVerse, 10)) {
     let currentVerse = Number.parseInt(startVerse, 10)
 
     const verseData = []
