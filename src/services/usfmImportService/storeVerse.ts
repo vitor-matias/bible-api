@@ -34,6 +34,7 @@ export const storeVerse = async (
       verseData.text.push({
         type: "text",
         text,
+        allCaps: verseObject?.tag === "nd",
       })
     } else if (verseObject.type === "quote") {
       const text = verseObject.text?.replace(/[*\n]/g, "") ?? ""

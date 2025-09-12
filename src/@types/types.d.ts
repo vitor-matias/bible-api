@@ -80,6 +80,7 @@ type Section = {
 type _Text = {
   type: "text"
   text: string
+  allCaps?: boolean
 }
 
 type Paragraph = {
