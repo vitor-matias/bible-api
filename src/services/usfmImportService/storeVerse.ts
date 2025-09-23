@@ -70,7 +70,7 @@ export const storeVerse = async (
           verseObject.tag === "s1",
         )
       }
-    } else if (verseObject.tag === "r") {
+    } else if (verseObject.tag === "r" || verseObject.tag === "sr") {
       const text = verseObject.content?.replace(/[*\n]/g, "") ?? ""
       verseData.text.push({
         type: "references",
