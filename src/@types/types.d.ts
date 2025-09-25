@@ -67,7 +67,7 @@ type Verse = {
   chapterNumber: Chapter["number"]
   number: number
   numberLabel: string
-  text: (_Text | Section | Paragraph | Quote | References)[]
+  text: (_Text | Section | Paragraph | Quote | References | _Footnote)[]
   searchId: string
 }
 
@@ -81,6 +81,12 @@ type _Text = {
   type: "text"
   text: string
   allCaps?: boolean
+}
+
+type _Footnote = {
+  type: "footnote"
+  text: string
+  reference: string
 }
 
 type Paragraph = {

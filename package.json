@@ -20,9 +20,9 @@
     "usfm-js": "^3.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.2",
+    "@biomejs/biome": "^2.2.4",
     "@types/express": "^5.0.3",
-    "@types/node": "^22.3.0",
+    "@types/node": "^24.5.2",
     "typescript": "^5.9.2"
   }
 }

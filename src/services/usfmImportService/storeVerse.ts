@@ -76,6 +76,24 @@ export const storeVerse = async (
         type: "references",
         text,
       })
+    } else if (verseObject.tag === "f") {
+      const text = verseObject.content?.replace(/[*\n]/g, "") ?? ""
+      // Split by \fp (new footnote marker)
+      const footnoteParts = text.split(/\\fp\s*/)
+      for (const part of footnoteParts) {
+        // Extract \fr ... \ft ... from each part
+        const frMatch = part.match(/\\fr\s+([^\\]+?)\s*\\ft/)
+        const ftMatch = part.match(/\\ft\s+([^\\]+?)(?=(\\fr|\\f\*|$))/)
+        if (frMatch && ftMatch) {
+          const footnoteReference = frMatch[1].trim()
+          const footnoteText = ftMatch[1].trim()
+          verseData.text.push({
+            type: "footnote",
+            text: footnoteText,
+            reference: footnoteReference,
+          })
+        }
+      }
     }
   }
 
