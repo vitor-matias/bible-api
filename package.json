@@ -14,15 +14,15 @@
   "dependencies": {
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
-    "prettier": "^3.6.2",
-    "redis": "^5.8.3",
-    "redisearch": "^2.0.0",
+    "prettier": "^3.7.1",
+    "redis": "^5.10.0",
+    "redisearch": "^2.0.1",
     "usfm-js": "^3.4.3"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.2.7",
-    "@types/express": "^5.0.3",
-    "@types/node": "^24.9.1",
+    "@biomejs/biome": "^2.2.8",
+    "@types/express": "^5.0.5",
+    "@types/node": "^24.10.1",
     "typescript": "^5.9.3"
   }
 }
