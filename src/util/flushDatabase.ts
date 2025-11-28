@@ -12,6 +12,10 @@ export const flushDatabase = async () => {
         type: "TEXT",
         AS: "text",
       },
+      "$.text[*].normalizedText": {
+        type: "TEXT",
+        AS: "normalizedText",
+      },
       "$.searchId": {
         type: "TEXT",
         AS: "searchId",

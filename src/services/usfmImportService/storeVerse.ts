@@ -1,5 +1,6 @@
 import type { createClient } from "redis"
 import { getVerse } from "../verse/getVerse"
+import { normalizeText } from "../../util/normalizeText"
 
 export const storeVerse = async (
   client: ReturnType<typeof createClient>,
@@ -34,6 +35,7 @@ export const storeVerse = async (
       verseData.text.push({
         type: "text",
         text,
+        normalizedText: normalizeText(text),
         allCaps: verseObject?.tag === "nd",
       })
     } else if (verseObject.type === "quote") {
@@ -41,6 +43,7 @@ export const storeVerse = async (
       verseData.text.push({
         type: "quote",
         text,
+        normalizedText: normalizeText(text),
         identLevel: Number.parseInt(verseObject.tag?.split("q")[1] ?? "1", 10),
       })
     } else if (
@@ -51,6 +54,7 @@ export const storeVerse = async (
       verseData.text.push({
         type: "paragraph",
         text,
+        normalizedText: normalizeText(text),
       })
     } else if (verseObject.type === "section" || verseObject.tag === "ms") {
       const text = verseObject.content?.replace(/[*\n]/g, "") ?? ""
@@ -59,6 +63,7 @@ export const storeVerse = async (
         type: "section",
         tag: verseObject.tag ?? "s2",
         text,
+        normalizedText: normalizeText(text),
       })
 
       if (verseObject.type === "section") {
@@ -75,6 +80,7 @@ export const storeVerse = async (
       verseData.text.push({
         type: "references",
         text,
+        normalizedText: normalizeText(text),
       })
     } else if (verseObject.tag === "f") {
       const text = verseObject.content?.replace(/[*\n]/g, "") ?? ""

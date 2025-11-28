@@ -75,11 +75,13 @@ type Section = {
   type: "section"
   tag: string
   text: string
+  normalizedText: string
 }
 
 type _Text = {
   type: "text"
   text: string
+  normalizedText: string
   allCaps?: boolean
 }
 
@@ -92,17 +94,20 @@ type _Footnote = {
 type Paragraph = {
   type: "paragraph"
   text: string
+  normalizedText: string
 }
 
 type Quote = {
   type: "quote"
   text: string
+  normalizedText: string
   identLevel: number
 }
 
 type References = {
   type: "references"
   text: string
+  normalizedText: string
 }
 
 type VersePage = {

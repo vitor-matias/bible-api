@@ -6,14 +6,14 @@ export const searchVerses = async (
   page: number,
   pageSize: number,
 ): Promise<VersePage> => {
-  console.warn(`Searching for: ${search}`)
+  console.warn(`Searching for: ${search}, page: ${page}, pageSize: ${pageSize}`)
 
   const offset = (page - 1) * pageSize
 
   // Add filter for number >= 1 in the RediSearch query
   const results = (await client.ft.SEARCH(
     "idx:verseText",
-    `@text: "${search}" @number:[1 +inf]`,
+    `@normalizedText: "${search}" @number:[1 +inf]`,
     {
       LIMIT: {
         from: offset,
