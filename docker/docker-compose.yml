@@ -1,7 +1,9 @@
+version: "3.8"
 services:
   redis:
     image: redis/redis-stack:latest
-    mem_limit: 1024m
+    environment:
+      REDIS_ARGS: "--maxmemory 1gb --maxmemory-policy allkeys-lru"
     ports:
       - "127.0.0.1:6379:6379"  # Bind to localhost only
     healthcheck:
@@ -10,7 +12,6 @@ services:
       - redis_data:/data
 
 
-
-
 volumes:
   redis_data:
+  
