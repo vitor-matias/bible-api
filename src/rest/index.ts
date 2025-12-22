@@ -21,7 +21,7 @@ const validateSearchParams = (
     return res.status(400).json({ error: "Text parameter is required" })
   }
 
-  if (text.length > 500) {
+  if (text.length > 200) {
     return res
       .status(400)
       .json({ error: "Search text is too long (maximum 500 characters)" })
