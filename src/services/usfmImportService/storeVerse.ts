@@ -1,6 +1,7 @@
 import type { createClient } from "redis"
-import { getVerse } from "../verse/getVerse"
 import { normalizeText } from "../../util/normalizeText"
+import { generateEmbedding } from "../openai/embeddings"
+import { getVerse } from "../verse/getVerse"
 
 export const storeVerse = async (
   client: ReturnType<typeof createClient>,
@@ -108,27 +109,26 @@ export const storeVerse = async (
     "$",
     verseData,
   )
-  /*  if (verseNumber > 0) {
-    await generateEmbedding(
-      verseData.text
-        .filter(
-          (t) =>
-            t.type === "text" || t.type === "quote" || t.type === "paragraph",
-        )
-        .map((t) => t.text.trim())
-        .join(" "),
-    ).then(async (embeddings) => {
-      const arr = embeddings.tolist()[0]
-      await client.json.set(
-        `embedding:${bookId}:${chapterNumber}:${verseNumber}`,
-        "$",
-        {
-          key: `verse:${bookId}:${chapterNumber}:${verseNumber}`,
-          embedding: arr ? arr : [],
-        },
+  if (verseNumber > 0) {
+    const verseText = verseData.text
+      .filter(
+        (t) =>
+          t.type === "text" || t.type === "quote" || t.type === "paragraph",
       )
-    }) 
-  }*/
+      .map((t) => t.text.trim())
+      .join(" ")
+
+    const embedding = await generateEmbedding(verseText)
+
+    await client.json.set(
+      `embedding:${bookId}:${chapterNumber}:${verseNumber}`,
+      "$",
+      {
+        key: `verse:${bookId}:${chapterNumber}:${verseNumber}`,
+        embedding: embedding,
+      },
+    )
+  }
 }
 
 export const saveChapterTitle = async (
