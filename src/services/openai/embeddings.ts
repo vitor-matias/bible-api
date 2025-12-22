@@ -11,14 +11,14 @@ const openai = new OpenAI({
 /**
  * Generates an embedding vector for the given text using OpenAI's `text-embedding-3-small` model.
  *
- * The input text must be non-empty and no longer than 8,000 characters. This function wraps
+ * The input text must be non-empty and no longer than 2,000 characters. This function wraps
  * the OpenAI embeddings API and returns the first embedding vector from the response.
  *
- * @param text - The input text to embed. Must be a non-empty string with a maximum length of 8,000 characters.
+ * @param text - The input text to embed. Must be a non-empty string with a maximum length of 2,000 characters.
  * @returns A promise that resolves to a numeric array representing the embedding vector.
  *
  * @throws {Error} If the `text` is empty or only whitespace.
- * @throws {Error} If the `text` exceeds the 8,000 character limit.
+ * @throws {Error} If the `text` exceeds the 2,000 character limit.
  * @throws {Error} If the embedding request to OpenAI fails for any reason, including network issues,
  *                 invalid or missing `OPENAI_API_KEY`, or other API errors. The original error message,
  *                 when available, is included in the thrown error.
@@ -28,8 +28,8 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
     throw new Error("Text cannot be empty")
   }
 
-  if (text.length > 8000) {
-    throw new Error("Text is too long (maximum 8000 characters)")
+  if (text.length > 2000) {
+    throw new Error("Text is too long (maximum 2000 characters)")
   }
 
   try {
