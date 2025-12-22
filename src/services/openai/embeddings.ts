@@ -85,10 +85,6 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
     throw new Error("Text cannot be empty")
   }
 
-  if (text.length > 2000) {
-    throw new Error("Text is too long (maximum 2000 characters)")
-  }
-
   try {
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
