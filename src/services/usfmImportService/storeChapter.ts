@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { MAX_EMBEDDING_TEXT_LENGTH } from "../../constants"
 import { generateEmbeddings } from "../openai/embeddings"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
@@ -129,7 +130,6 @@ export const storeChapter = async (
 
   // Generate embeddings in batch for all verses in the chapter
   if (versesData.length > 0) {
-    const MAX_EMBEDDING_TEXT_LENGTH = 2000
     const texts = versesData.map((v) => {
       const text = v.text
       if (text.length > MAX_EMBEDDING_TEXT_LENGTH) {

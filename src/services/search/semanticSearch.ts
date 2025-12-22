@@ -37,12 +37,12 @@ export const semanticSearchVerses = async (
 
   // Request a reasonable max results for KNN and paginate in memory
   // KNN evaluates all vectors, so we request a fixed number and handle pagination client-side
-  const maxResults = 100
+  const KNN_MAX_RESULTS = 100
 
   // Perform vector search using KNN
   const results = (await client.ft.search(
     "idx:verseEmbeddings",
-    `*=>[KNN ${maxResults} @embedding $vec AS score]`,
+    `*=>[KNN ${KNN_MAX_RESULTS} @embedding $vec AS score]`,
     {
       PARAMS: {
         vec: embeddingBuffer,
@@ -66,7 +66,7 @@ export const semanticSearchVerses = async (
 
   // Paginate results in memory after KNN search
   const paginatedDocs = results.documents.slice(offset, offset + pageSize)
-  const totalResults = results.documents.length
+  const totalResults = results.total
   const totalPages = Math.ceil(totalResults / pageSize)
 
   if (page > totalPages) {
