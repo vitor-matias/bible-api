@@ -129,9 +129,27 @@ export const storeChapter = async (
 
   // Generate embeddings in batch for all verses in the chapter
   if (versesData.length > 0) {
-    const texts = versesData.map((v) => v.text)
+    const MAX_EMBEDDING_TEXT_LENGTH = 2000
+    const texts = versesData.map((v) => {
+      if (v.text.length > MAX_EMBEDDING_TEXT_LENGTH) {
+        console.warn(
+          "Truncating verse text for embedding generation due to length limit",
+          {
+            bookId: v.verseData.bookId,
+            chapterNumber: v.verseData.chapterNumber,
+            verseNumber: v.verseData.number,
+            originalLength: v.text.length,
+            usedLength: MAX_EMBEDDING_TEXT_LENGTH,
+          },
+        )
+        return v.text.slice(0, MAX_EMBEDDING_TEXT_LENGTH)
+      }
+      return v.text
+    })
 
-    console.log(`Generating embeddings for chapter ${chapterNumber} with ${texts.length} verses...`)
+    console.log(
+      `Generating embeddings for chapter ${chapterNumber} with ${texts.length} verses...`,
+    )
     try {
       const embeddings = await generateEmbeddings(texts)
 
