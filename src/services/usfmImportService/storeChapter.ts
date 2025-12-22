@@ -96,9 +96,11 @@ export const storeChapter = async (
         verseLabel,
         verse.verseObjects,
       )
-      const text = extractVerseText(verseData)
-      if (text.trim().length > 0) {
-        versesData.push({ verseData, text })
+      if (verseNumber > 0) {
+        const text = extractVerseText(verseData)
+        if (text.trim().length > 0) {
+          versesData.push({ verseData, text })
+        }
       }
       verseNumber++
     } else {
