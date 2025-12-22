@@ -1,6 +1,6 @@
 import type { createClient } from "redis"
-import { getVerse } from "../verse/getVerse"
 import { normalizeText } from "../../util/normalizeText"
+import { getVerse } from "../verse/getVerse"
 
 export const storeVerse = async (
   client: ReturnType<typeof createClient>,
