@@ -65,8 +65,9 @@ export const semanticSearchVerses = async (
   }
 
   // Paginate results in memory after KNN search
+  // Note: KNN returns at most KNN_MAX_RESULTS documents, so cap totalResults accordingly
   const paginatedDocs = results.documents.slice(offset, offset + pageSize)
-  const totalResults = results.total
+  const totalResults = Math.min(results.total, KNN_MAX_RESULTS)
   const totalPages = Math.ceil(totalResults / pageSize)
 
   if (page > totalPages) {
