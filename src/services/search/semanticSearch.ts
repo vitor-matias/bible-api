@@ -36,24 +36,34 @@ export const semanticSearchVerses = async (
   const embeddingBuffer = Buffer.from(new Float32Array(queryEmbedding).buffer)
 
   // Request a reasonable max results for KNN and paginate in memory
-  // KNN evaluates all vectors, so we request a fixed number and handle pagination client-side
+  // Ensure we fetch at least enough to cover the requested page, capped by a max
   const KNN_MAX_RESULTS = 100
+  const requestedSize = Math.min(KNN_MAX_RESULTS, offset + pageSize)
 
   // Perform vector search using KNN
   const results = (await client.ft.search(
     "idx:verseEmbeddings",
-    `*=>[KNN ${KNN_MAX_RESULTS} @embedding $vec AS score]`,
+    `*=>[KNN ${requestedSize} @embedding $vec AS score]`,
     {
       PARAMS: {
         vec: embeddingBuffer,
+      },
+      LIMIT: {
+        from: 0,
+        size: requestedSize,
       },
       SORTBY: {
         BY: "score",
         DIRECTION: "ASC",
       },
+      RETURN: ["key"],
       DIALECT: 2,
     },
   )) as SearchReply
+
+  console.log(
+    `KNN fetched docs=${results?.documents?.length ?? 0}, requestedSize=${requestedSize}, offset=${offset}, pageSize=${pageSize}, total=${results?.total ?? 0}`,
+  )
 
   if (!results || results.total === 0) {
     return {
@@ -65,7 +75,7 @@ export const semanticSearchVerses = async (
   }
 
   // Paginate results in memory after KNN search
-  // Note: KNN returns at most KNN_MAX_RESULTS documents, so cap totalResults accordingly
+  // Note: We fetched up to `requestedSize`, so slice for the requested page
   const paginatedDocs = results.documents.slice(offset, offset + pageSize)
   const totalResults = Math.min(results.total, KNN_MAX_RESULTS)
   const totalPages = Math.ceil(totalResults / pageSize)

@@ -130,6 +130,8 @@ export const storeChapter = async (
   // Generate embeddings in batch for all verses in the chapter
   if (versesData.length > 0) {
     const texts = versesData.map((v) => v.text)
+
+    console.log(`Generating embeddings for chapter ${chapterNumber} with ${texts.length} verses...`)
     try {
       const embeddings = await generateEmbeddings(texts)
 
