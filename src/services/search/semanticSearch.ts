@@ -35,21 +35,21 @@ export const semanticSearchVerses = async (
   // Convert the embedding to a Buffer for Redis vector search
   const embeddingBuffer = Buffer.from(new Float32Array(queryEmbedding).buffer)
 
+  // Request a reasonable max results for KNN and paginate in memory
+  // KNN evaluates all vectors, so we request a fixed number and handle pagination client-side
+  const KNN_MAX_RESULTS = 100
+
   // Perform vector search using KNN
   const results = (await client.ft.search(
     "idx:verseEmbeddings",
-    `*=>[KNN ${offset + pageSize} @embedding $BLOB AS score]`,
+    `*=>[KNN ${KNN_MAX_RESULTS} @embedding $vec AS score]`,
     {
       PARAMS: {
-        BLOB: embeddingBuffer,
+        vec: embeddingBuffer,
       },
       SORTBY: {
         BY: "score",
         DIRECTION: "ASC",
-      },
-      LIMIT: {
-        from: offset,
-        size: pageSize,
       },
       DIALECT: 2,
     },
@@ -64,21 +64,25 @@ export const semanticSearchVerses = async (
     }
   }
 
-  const totalPages = Math.ceil(results.total / pageSize)
+  // Paginate results in memory after KNN search
+  // Note: KNN returns at most KNN_MAX_RESULTS documents, so cap totalResults accordingly
+  const paginatedDocs = results.documents.slice(offset, offset + pageSize)
+  const totalResults = Math.min(results.total, KNN_MAX_RESULTS)
+  const totalPages = Math.ceil(totalResults / pageSize)
 
   if (page > totalPages) {
     return {
       verses: [],
-      total: results.total,
+      total: totalResults,
       currentPage: page,
       totalPages: totalPages,
     }
   }
 
-  console.log(`Found ${results.total} results (page ${page}/${totalPages})`)
+  console.log(`Found ${totalResults} results (page ${page}/${totalPages})`)
 
   // Fetch the actual verse data from Redis using the keys stored with embeddings
-  const verseKeys = results.documents.map((doc) => {
+  const verseKeys = paginatedDocs.map((doc) => {
     const embeddingData = doc.value as unknown as {
       key: string
       embedding: number[]
@@ -97,7 +101,7 @@ export const semanticSearchVerses = async (
 
   return {
     verses,
-    total: results.total,
+    total: totalResults,
     currentPage: page,
     totalPages,
   }
