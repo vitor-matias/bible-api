@@ -1,13 +1,16 @@
 services:
   redis:
     image: redis/redis-stack:latest
-    command: ["redis-server", "--maxmemory", "1gb", "--maxmemory-policy", "allkeys-lru"]
     ports:
       - "127.0.0.1:6379:6379"  # Bind to localhost only
     healthcheck:
       test: [ "CMD", "redis-cli", "ping" ]
     volumes:
       - redis_data:/data
+    deploy:
+      resources:
+        limits:
+          memory: 1G
 
 
 
