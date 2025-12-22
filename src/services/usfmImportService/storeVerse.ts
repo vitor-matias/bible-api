@@ -118,16 +118,33 @@ export const storeVerse = async (
       .map((t) => t.text.trim())
       .join(" ")
 
-    const embedding = await generateEmbedding(verseText)
+    // Skip embedding generation if there is no actual verse text
+    if (verseText.trim().length === 0) {
+      return
+    }
 
-    await client.json.set(
-      `embedding:${bookId}:${chapterNumber}:${verseNumber}`,
-      "$",
-      {
-        key: `verse:${bookId}:${chapterNumber}:${verseNumber}`,
-        embedding: embedding,
-      },
-    )
+    try {
+      const embedding = await generateEmbedding(verseText)
+
+      await client.json.set(
+        `embedding:${bookId}:${chapterNumber}:${verseNumber}`,
+        "$",
+        {
+          key: `verse:${bookId}:${chapterNumber}:${verseNumber}`,
+          embedding: embedding,
+        },
+      )
+    } catch (error) {
+      console.error(
+        "Failed to generate or store embedding for verse",
+        {
+          bookId,
+          chapterNumber,
+          verseNumber,
+        },
+        error,
+      )
+    }
   }
 }
 
