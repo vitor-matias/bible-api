@@ -1,6 +1,5 @@
 import type { createClient } from "redis"
 import { normalizeText } from "../../util/normalizeText"
-import { generateEmbedding } from "../openai/embeddings"
 import { getVerse } from "../verse/getVerse"
 
 export const storeVerse = async (
@@ -11,7 +10,7 @@ export const storeVerse = async (
   verseNumber: number,
   verseLabel: string,
   verseObjects: USFMVerseObject[],
-): Promise<void> => {
+): Promise<Verse> => {
   const searchId = `${String(bookNumber).padStart(2, "0")}-${String(chapterNumber).padStart(3, "0")}-${String(verseNumber).padStart(3, "0")}`
   const verseData: Verse = (await getVerse(
     client,
@@ -109,43 +108,23 @@ export const storeVerse = async (
     "$",
     verseData,
   )
-  if (verseNumber > 0) {
-    const verseText = verseData.text
-      .filter(
-        (t) =>
-          t.type === "text" || t.type === "quote" || t.type === "paragraph",
-      )
-      .map((t) => t.text.trim())
-      .join(" ")
+  return verseData
+}
 
-    // Skip embedding generation if there is no actual verse text
-    if (verseText.trim().length === 0) {
-      return
-    }
-
-    try {
-      const embedding = await generateEmbedding(verseText)
-
-      await client.json.set(
-        `embedding:${bookId}:${chapterNumber}:${verseNumber}`,
-        "$",
-        {
-          key: `verse:${bookId}:${chapterNumber}:${verseNumber}`,
-          embedding: embedding,
-        },
-      )
-    } catch (error) {
-      console.error(
-        "Failed to generate or store embedding for verse",
-        {
-          bookId,
-          chapterNumber,
-          verseNumber,
-        },
-        error,
-      )
-    }
-  }
+/**
+ * Extracts the plain text content from a verse for embedding generation.
+ * Only includes text, quote, and paragraph types, filtering out other content like sections and footnotes.
+ *
+ * @param verseData - The verse data object containing text elements
+ * @returns The extracted text joined by spaces, or empty string if no text content
+ */
+export const extractVerseText = (verseData: Verse): string => {
+  return verseData.text
+    .filter(
+      (t) => t.type === "text" || t.type === "quote" || t.type === "paragraph",
+    )
+    .map((t) => t.text.trim())
+    .join(" ")
 }
 
 export const saveChapterTitle = async (

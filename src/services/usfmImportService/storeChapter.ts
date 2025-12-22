@@ -1,5 +1,6 @@
 import type { createClient } from "redis"
-import { storeVerse } from "./storeVerse"
+import { generateEmbeddings } from "../openai/embeddings"
+import { extractVerseText, storeVerse } from "./storeVerse"
 
 const compareVerseLabels = (
   a: [string, USFMVerse],
@@ -26,6 +27,10 @@ export const storeChapter = async (
   chapter: USFMChapter,
 ): Promise<void> => {
   let verseNumber = 1
+  const versesData: {
+    verseData: Verse
+    text: string
+  }[] = []
 
   for (const [verseLabel, verse] of Object.entries(chapter).sort(
     compareVerseLabels,
@@ -38,7 +43,7 @@ export const storeChapter = async (
       for (const verseObject of Object.values(verse.verseObjects)) {
         if (verseObject.tag === "va") {
           if (labelForVerse !== "") {
-            await storeVerse(
+            const verseData = await storeVerse(
               client,
               bookCode,
               bookNumber,
@@ -47,6 +52,12 @@ export const storeChapter = async (
               labelForVerse,
               objectsForVerse,
             )
+            if (verseNumber > 0) {
+              const text = extractVerseText(verseData)
+              if (text.trim().length > 0) {
+                versesData.push({ verseData, text })
+              }
+            }
             objectsForVerse = []
 
             verseNumber++
@@ -58,7 +69,7 @@ export const storeChapter = async (
       }
 
       if (labelForVerse !== "") {
-        await storeVerse(
+        const verseData = await storeVerse(
           client,
           bookCode,
           bookNumber,
@@ -67,10 +78,16 @@ export const storeChapter = async (
           labelForVerse,
           objectsForVerse,
         )
+        if (verseNumber > 0) {
+          const text = extractVerseText(verseData)
+          if (text.trim().length > 0) {
+            versesData.push({ verseData, text })
+          }
+        }
         verseNumber++
       }
     } else if (verseLabel !== "front") {
-      await storeVerse(
+      const verseData = await storeVerse(
         client,
         bookCode,
         bookNumber,
@@ -79,6 +96,10 @@ export const storeChapter = async (
         verseLabel,
         verse.verseObjects,
       )
+      const text = extractVerseText(verseData)
+      if (text.trim().length > 0) {
+        versesData.push({ verseData, text })
+      }
       verseNumber++
     } else {
       await storeVerse(
@@ -102,5 +123,33 @@ export const storeChapter = async (
       "front",
       [],
     )
+  }
+
+  // Generate embeddings in batch for all verses in the chapter
+  if (versesData.length > 0) {
+    const texts = versesData.map((v) => v.text)
+    try {
+      const embeddings = await generateEmbeddings(texts)
+
+      // Store all embeddings
+      for (let i = 0; i < versesData.length; i++) {
+        const v = versesData[i].verseData
+        if (embeddings[i] && embeddings[i].length > 0) {
+          await client.json.set(
+            `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
+            "$",
+            {
+              key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
+              embedding: embeddings[i],
+            },
+          )
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Failed to generate embeddings for chapter ${chapterNumber}:`,
+        error,
+      )
+    }
   }
 }
