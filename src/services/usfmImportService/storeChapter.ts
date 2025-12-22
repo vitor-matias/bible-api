@@ -1,5 +1,4 @@
 import type { createClient } from "redis"
-import { MAX_EMBEDDING_TEXT_LENGTH } from "../../constants"
 import { generateEmbeddings } from "../openai/embeddings"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
@@ -130,19 +129,7 @@ export const storeChapter = async (
 
   // Generate embeddings in batch for all verses in the chapter
   if (versesData.length > 0) {
-    const texts = versesData.map((v) => {
-      const text = v.text
-      if (text.length > MAX_EMBEDDING_TEXT_LENGTH) {
-        console.warn("Truncated verse text for embedding generation", {
-          bookId: v.verseData.bookId,
-          chapterNumber: v.verseData.chapterNumber,
-          verseNumber: v.verseData.number,
-          originalLength: text.length,
-        })
-        return text.slice(0, MAX_EMBEDDING_TEXT_LENGTH)
-      }
-      return text
-    })
+    const texts = versesData.map((v) => v.text)
     try {
       const embeddings = await generateEmbeddings(texts)
 

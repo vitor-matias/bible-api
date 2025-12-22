@@ -1,6 +1,5 @@
 import type express from "express"
 import { createClient } from "redis"
-import { MAX_EMBEDDING_TEXT_LENGTH } from "../constants"
 import { checkCache } from "../middleware/checkCache"
 import { searchRateLimiter } from "../middleware/rateLimiter"
 import { getBookController } from "./book"
@@ -22,10 +21,10 @@ const validateSearchParams = (
     return res.status(400).json({ error: "Text parameter is required" })
   }
 
-  if (text.length > MAX_EMBEDDING_TEXT_LENGTH) {
-    return res.status(400).json({
-      error: `Search text is too long (maximum ${MAX_EMBEDDING_TEXT_LENGTH} characters)`,
-    })
+  if (text.length > 500) {
+    return res
+      .status(400)
+      .json({ error: "Search text is too long (maximum 500 characters)" })
   }
 
   // Validate page parameter if provided

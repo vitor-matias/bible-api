@@ -7,12 +7,6 @@ export const checkCache = async (
 ) => {
   const { url } = req
   const { client } = res.locals
-
-  // Skip caching for semantic search requests
-  if (req.query.semantic === "true") {
-    return next()
-  }
-
   try {
     const cachedResponse = await client.json.get(url)
     if (cachedResponse != null) {
