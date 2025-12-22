@@ -62,16 +62,22 @@ export const semanticSearchVerses = async (
   console.warn(`Found ${results.total} results (page ${page}/${totalPages})`)
 
   // Fetch the actual verse data from Redis using the keys stored with embeddings
-  const verses: Verse[] = []
-  for (const doc of results.documents) {
-    const embeddingData = doc.value as unknown as { key: string; embedding: number[] }
-    const verseKey = embeddingData.key
-
-    const verseData = await client.json.get(verseKey)
-    if (verseData) {
-      verses.push(verseData as Verse)
+  const verseKeys = results.documents.map((doc) => {
+    const embeddingData = doc.value as unknown as {
+      key: string
+      embedding: number[]
     }
-  }
+    return embeddingData.key
+  })
+
+  // Batch fetch all verses at once
+  const versesData = await Promise.all(
+    verseKeys.map((key) => client.json.get(key)),
+  )
+
+  const verses: Verse[] = versesData
+    .filter((data) => data !== null)
+    .map((data) => data as Verse)
 
   return {
     verses,
