@@ -3,7 +3,7 @@ import rateLimit from "express-rate-limit"
 // Rate limiter for regular search endpoints
 export const searchRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 30, // 30 requests per minute
+  max: 20, // 20 requests per minute
   message: {
     error: "Too many search requests, please try again later.",
   },
