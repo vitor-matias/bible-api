@@ -14,10 +14,10 @@ const openai = new OpenAI({
  * Generates embedding vectors for multiple texts using OpenAI's `text-embedding-3-small` model.
  *
  * This function batches multiple texts into a single API call, which is more efficient than
- * generating embeddings one at a time. Empty texts or texts longer than 2,000 characters are
- * filtered out, and their corresponding positions in the result array will contain empty arrays.
+ * generating embeddings one at a time. Empty texts are filtered out, and their corresponding
+ * positions in the result array will contain empty arrays.
  *
- * @param texts - An array of input texts to embed. Empty texts or texts exceeding 2,000 characters will be skipped.
+ * @param texts - An array of input texts to embed. Empty texts will be skipped.
  * @returns A promise that resolves to an array of numeric arrays, where each inner array represents
  *          an embedding vector. Positions corresponding to invalid texts will contain empty arrays.
  *
@@ -35,7 +35,7 @@ export const generateEmbeddings = async (
   // Filter out empty texts and track their indices
   const validTexts: { index: number; text: string }[] = []
   texts.forEach((text, index) => {
-    if (text && text.trim().length > 0 && text.length <= 2000) {
+    if (text && text.trim().length > 0) {
       validTexts.push({ index, text: text.trim() })
     }
   })
