@@ -80,7 +80,6 @@ export const semanticSearchVerses = async (
   const totalResults = Math.min(results.total, KNN_MAX_RESULTS)
   const totalPages = Math.ceil(totalResults / pageSize)
 
-
   console.log(`Found ${totalResults} results (page ${page}/${totalPages})`)
 
   // Fetch the actual verse data from Redis using the keys stored with embeddings
