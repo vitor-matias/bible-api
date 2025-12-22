@@ -80,14 +80,6 @@ export const semanticSearchVerses = async (
   const totalResults = Math.min(results.total, KNN_MAX_RESULTS)
   const totalPages = Math.ceil(totalResults / pageSize)
 
-  if (page > totalPages) {
-    return {
-      verses: [],
-      total: totalResults,
-      currentPage: page,
-      totalPages: totalPages,
-    }
-  }
 
   console.log(`Found ${totalResults} results (page ${page}/${totalPages})`)
 
