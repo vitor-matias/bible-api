@@ -27,7 +27,6 @@ export default (app: express.Express): void => {
   // Endpoint to get a specific verse
   app.get("/v1/:book/:chapter/:startVerse/:endVerse", getVersesController)
 
-  app.get("/v1/books", getBooksController)
   app.get(
     "/v1/search",
     searchRateLimiter,
@@ -35,6 +34,7 @@ export default (app: express.Express): void => {
     checkCache,
     searchVersesController,
   )
+  app.get("/v1/books", checkCache, getBooksController)
 
   app.get("/v1/:book/:chapter", getChapterController)
 

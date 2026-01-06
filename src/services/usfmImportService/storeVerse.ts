@@ -121,7 +121,7 @@ export const storeVerse = async (
 export const extractVerseText = (verseData: Verse): string => {
   return verseData.text
     .filter(
-      (t) => t.type === "text" || t.type === "quote" || t.type === "paragraph",
+      (t) => t.type === "text" || t.type === "quote" || t.type === "paragraph" || t.type === "section",
     )
     .map((t) => t.text.trim())
     .join(" ")

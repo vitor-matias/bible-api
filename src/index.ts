@@ -12,14 +12,16 @@ const port = process.env.PORT
 
 let filesLoaded: boolean
 
-setEndpoints(app)
+;(async () => {
+  await loadFilesIntoMemory()
 
-// Start the server
-app.listen(port, () => {
-  console.info(`Server is up and running at http://localhost:${port}`)
-})
+  setEndpoints(app)
 
-loadFilesIntoMemory()
+  // Start the server
+  app.listen(port, () => {
+    console.info(`Server is up and running at http://localhost:${port}`)
+  })
+})()
 
 // Middleware to load the Bible data into memory
 async function loadFilesIntoMemory() {
