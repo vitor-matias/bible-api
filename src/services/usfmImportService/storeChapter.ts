@@ -32,9 +32,41 @@ export const storeChapter = async (
     text: string
   }[] = []
 
+  // Tracks an empty quote (like \q1) that appears at the end of a verse, so it can
+  // be applied to the beginning of the next verse.
+  let pendingQuote: USFMVerseObject | null = null
+
   for (const [verseLabel, verse] of Object.entries(chapter).sort(
     compareVerseLabels,
   )) {
+    // If the previous verse ended with an empty quote block, apply its tag
+    // to the first object of the current verse if it's plain text.
+    // USFM authors sometimes place a quote tag (e.g. \q1) before a verse marker (\v)
+    // to style the upcoming verse, but the parser assigns that empty quote to the
+    // end of the *previous* verse. This retroactively fixes that.
+    if (pendingQuote && verse.verseObjects.length > 0) {
+      const firstText = verse.verseObjects.find((v) => v.type === "text")
+      if (firstText) {
+        firstText.type = "quote"
+        firstText.tag = pendingQuote.tag
+      }
+      pendingQuote = null
+    }
+
+    // Check if the current verse ends with an empty quote block.
+    // If so, remove it from this verse and save it as pending
+    // so it can be applied to the beginning of the next verse instead.
+    if (verse.verseObjects.length > 0) {
+      const lastObj = verse.verseObjects[verse.verseObjects.length - 1]
+      if (
+        lastObj.type === "quote" &&
+        (!lastObj.text || lastObj.text.trim() === "")
+      ) {
+        pendingQuote = lastObj
+        verse.verseObjects.pop()
+      }
+    }
+
     if (verse.verseObjects.some((verseObject) => verseObject.tag === "ms")) {
       let objectsForVerse: USFMVerseObject[] = []
       verseNumber = verseLabel === "front" ? 0 : verseNumber
