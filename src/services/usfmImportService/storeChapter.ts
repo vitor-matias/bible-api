@@ -44,12 +44,9 @@ export const storeChapter = async (
     // USFM authors sometimes place a quote tag (e.g. \q1) before a verse marker (\v)
     // to style the upcoming verse, but the parser assigns that empty quote to the
     // end of the *previous* verse. This retroactively fixes that.
-    if (pendingQuote && verse.verseObjects.length > 0) {
-      const firstText = verse.verseObjects.find((v) => v.type === "text")
-      if (firstText) {
-        firstText.type = "quote"
-        firstText.tag = pendingQuote.tag
-      }
+    if (pendingQuote) {
+      pendingQuote.text = "\u200B"
+      verse.verseObjects.unshift(pendingQuote)
       pendingQuote = null
     }
 
