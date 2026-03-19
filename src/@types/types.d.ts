@@ -51,7 +51,60 @@ type Book = {
   shortName: string
   abrv: string
   chapterCount: number
+  introduction?: IntroElement[]
   chapters?: Chapter[]
+}
+
+type IntroElement =
+  | IntroTitle
+  | IntroParagraph
+  | IntroSection
+  | IntroOutline
+  | IntroTable
+  | IntroListItem
+  | IntroSidebar
+  | IntroMajorSection
+
+type IntroTitle = {
+  type: "introTitle"
+  level: number
+  text: string
+}
+
+type IntroParagraph = {
+  type: "introParagraph"
+  text: string
+}
+
+type IntroSection = {
+  type: "introSection"
+  level: number
+  text: string
+}
+
+type IntroOutline = {
+  type: "introOutline"
+  text: string
+}
+
+type IntroTable = {
+  type: "introTable"
+  rows: string[][]
+}
+
+type IntroListItem = {
+  type: "introListItem"
+  text: string
+}
+
+type IntroSidebar = {
+  type: "introSidebar"
+  content: IntroElement[]
+}
+
+type IntroMajorSection = {
+  type: "introMajorSection"
+  text: string
 }
 
 type Chapter = {

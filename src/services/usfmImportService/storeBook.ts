@@ -1,6 +1,7 @@
 import { createClient } from "redis"
 import { getBookHeader } from "../book/getBookHeader"
 import { getBookId } from "../book/getBookId"
+import { extractBookIntro } from "./bookIntroUtils"
 import { storeChapter } from "./storeChapter"
 
 export const storeBook = async (usfmBook: USFMBook): Promise<void> => {
@@ -21,12 +22,15 @@ export const storeBook = async (usfmBook: USFMBook): Promise<void> => {
     const bookShortName = getBookHeader(usfmBook, "toc2")
     const bookAbrv = getBookHeader(usfmBook, "toc3")
 
+    const introduction = extractBookIntro(usfmBook.headers)
+
     const book: Book = {
       id: bookId,
       name: bookName ?? "",
       shortName: bookShortName ?? "",
       abrv: bookAbrv ?? "",
       chapterCount: Object.keys(usfmBook.chapters).length,
+      ...(introduction && { introduction }),
     }
 
     await client.json.set(`book:${bookId}`, "$", book)
