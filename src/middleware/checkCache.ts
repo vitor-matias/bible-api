@@ -20,12 +20,14 @@ export const checkCache = async (
 
       // Override the send function
       res.send = (body) => {
-        // Cache the response
-        client.json.set(url, "$", body).catch((err: Error) => {
-          console.error(`Error setting cache: ${err}`)
-        })
+        // Cache the response only for successful responses
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          client.json.set(url, "$", body).catch((err: Error) => {
+            console.error(`Error setting cache: ${err}`)
+          })
 
-        client.expire(url, 86400)
+          client.expire(url, 86400)
+        }
 
         // Call the original send function
         return originalSend(body)

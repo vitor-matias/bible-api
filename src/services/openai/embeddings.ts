@@ -2,13 +2,14 @@ import OpenAI from "openai"
 
 require("dotenv").config()
 
-if (!process.env.OPENAI_API_KEY) {
-  throw new Error("OPENAI_API_KEY environment variable is required")
+const getOpenAIClient = (): OpenAI => {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY environment variable is required")
+  }
+  return new OpenAI({
+    apiKey: process.env.OPENAI_API_KEY,
+  })
 }
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-})
 
 /**
  * Generates embedding vectors for multiple texts using OpenAI's `text-embedding-3-small` model.
@@ -45,6 +46,7 @@ export const generateEmbeddings = async (
   }
 
   try {
+    const openai = getOpenAIClient()
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: validTexts.map((v) => v.text),
@@ -86,6 +88,7 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
   }
 
   try {
+    const openai = getOpenAIClient()
     const response = await openai.embeddings.create({
       model: "text-embedding-3-small",
       input: text,

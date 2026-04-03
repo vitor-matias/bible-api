@@ -13,6 +13,10 @@ export const validateSearchParams = (
     return res.status(400).json({ error: "Text parameter is required" })
   }
 
+  if (!text.trim()) {
+    return res.status(400).json({ error: "Text parameter cannot be blank" })
+  }
+
   if (text.length > 200) {
     return res
       .status(400)
