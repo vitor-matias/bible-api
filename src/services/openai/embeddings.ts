@@ -1,6 +1,5 @@
 import OpenAI from "openai"
-
-require("dotenv").config()
+import "dotenv/config"
 
 const getOpenAIClient = (): OpenAI => {
   if (!process.env.OPENAI_API_KEY) {
@@ -85,6 +84,10 @@ export const generateEmbeddings = async (
 export const generateEmbedding = async (text: string): Promise<number[]> => {
   if (!text || text.trim().length === 0) {
     throw new Error("Text cannot be empty")
+  }
+
+  if (text.length > 2000) {
+    throw new Error("Text must be 2,000 characters or fewer")
   }
 
   try {

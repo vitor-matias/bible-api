@@ -13,15 +13,20 @@ export const validateSearchParams = (
     return res.status(400).json({ error: "Text parameter is required" })
   }
 
-  if (!text.trim()) {
+  const trimmedText = text.trim()
+
+  if (!trimmedText) {
     return res.status(400).json({ error: "Text parameter cannot be blank" })
   }
 
-  if (text.length > 200) {
+  if (trimmedText.length > 200) {
     return res
       .status(400)
       .json({ error: "Search text is too long (maximum 200 characters)" })
   }
+
+  // Replace raw text with trimmed value so downstream receives cleaned input
+  req.query.text = trimmedText
 
   // Validate page parameter if provided
   if (page !== undefined) {

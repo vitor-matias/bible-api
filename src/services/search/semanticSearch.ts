@@ -23,11 +23,20 @@ export const semanticSearchVerses = async (
   page: number,
   pageSize: number,
 ): Promise<VersePage> => {
-  console.log(
-    `Semantic search for: ${search}, page: ${page}, pageSize: ${pageSize}`,
-  )
+  console.log(`Semantic search requested: page=${page}, pageSize=${pageSize}`)
 
+  const KNN_MAX_RESULTS = 100
   const offset = (page - 1) * pageSize
+
+  // Short-circuit for pages that are beyond the maximum result window
+  if (offset >= KNN_MAX_RESULTS) {
+    return {
+      verses: [],
+      total: 0,
+      currentPage: page,
+      totalPages: Math.ceil(KNN_MAX_RESULTS / pageSize),
+    }
+  }
 
   // Generate embedding for the search query
   const queryEmbedding = await generateEmbedding(search)
@@ -35,9 +44,6 @@ export const semanticSearchVerses = async (
   // Convert the embedding to a Buffer for Redis vector search
   const embeddingBuffer = Buffer.from(new Float32Array(queryEmbedding).buffer)
 
-  // Request a reasonable max results for KNN and paginate in memory
-  // Ensure we fetch at least enough to cover the requested page, capped by a max
-  const KNN_MAX_RESULTS = 100
   const requestedSize = Math.min(KNN_MAX_RESULTS, offset + pageSize)
 
   // Perform vector search using KNN
