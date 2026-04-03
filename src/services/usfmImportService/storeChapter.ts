@@ -157,7 +157,7 @@ export const storeChapter = async (
   }
 
   // Generate embeddings in batch for all verses in the chapter
-  if (versesData.length > 0) {
+  if (false) {
     const texts = versesData.map((v) => v.text)
 
     console.log(
