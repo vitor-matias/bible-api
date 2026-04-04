@@ -26,7 +26,9 @@ export const checkCache = async (
             console.error(`Error setting cache: ${err}`)
           })
 
-          client.expire(url, 86400)
+          client.expire(url, 86400).catch((err: Error) => {
+            console.error(`Error setting cache expiry: ${err}`)
+          })
         }
 
         // Call the original send function
