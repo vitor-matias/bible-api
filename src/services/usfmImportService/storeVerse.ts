@@ -10,7 +10,7 @@ export const storeVerse = async (
   verseNumber: number,
   verseLabel: string,
   verseObjects: USFMVerseObject[],
-): Promise<void> => {
+): Promise<Verse> => {
   const searchId = `${String(bookNumber).padStart(2, "0")}-${String(chapterNumber).padStart(3, "0")}-${String(verseNumber).padStart(3, "0")}`
   const verseData: Verse = (await getVerse(
     client,
@@ -108,27 +108,27 @@ export const storeVerse = async (
     "$",
     verseData,
   )
-  /*  if (verseNumber > 0) {
-    await generateEmbedding(
-      verseData.text
-        .filter(
-          (t) =>
-            t.type === "text" || t.type === "quote" || t.type === "paragraph",
-        )
-        .map((t) => t.text.trim())
-        .join(" "),
-    ).then(async (embeddings) => {
-      const arr = embeddings.tolist()[0]
-      await client.json.set(
-        `embedding:${bookId}:${chapterNumber}:${verseNumber}`,
-        "$",
-        {
-          key: `verse:${bookId}:${chapterNumber}:${verseNumber}`,
-          embedding: arr ? arr : [],
-        },
-      )
-    }) 
-  }*/
+  return verseData
+}
+
+/**
+ * Extracts the plain text content from a verse for embedding generation.
+ * Only includes text, quote, and paragraph types, filtering out other content like sections and footnotes.
+ *
+ * @param verseData - The verse data object containing text elements
+ * @returns The extracted text joined by spaces, or empty string if no text content
+ */
+export const extractVerseText = (verseData: Verse): string => {
+  return verseData.text
+    .filter(
+      (t) =>
+        t.type === "text" ||
+        t.type === "quote" ||
+        t.type === "paragraph" ||
+        t.type === "section",
+    )
+    .map((t) => t.text.trim())
+    .join(" ")
 }
 
 export const saveChapterTitle = async (

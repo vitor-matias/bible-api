@@ -2,6 +2,7 @@ import type express from "express"
 import { createClient } from "redis"
 import { checkCache } from "../middleware/checkCache"
 import { searchRateLimiter } from "../middleware/rateLimiter"
+import { validateSearchParams } from "../middleware/validateSearchParams"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
@@ -26,8 +27,14 @@ export default (app: express.Express): void => {
   // Endpoint to get a specific verse
   app.get("/v1/:book/:chapter/:startVerse/:endVerse", getVersesController)
 
-  app.get("/v1/books", getBooksController)
-  app.get("/v1/search", searchRateLimiter, checkCache, searchVersesController)
+  app.get(
+    "/v1/search",
+    searchRateLimiter,
+    validateSearchParams,
+    checkCache,
+    searchVersesController,
+  )
+  app.get("/v1/books", checkCache, getBooksController)
 
   app.get("/v1/:book/:chapter", getChapterController)
 
