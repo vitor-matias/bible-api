@@ -113,10 +113,7 @@ export const storeVerse = async (
 
 /**
  * Extracts the plain text content from a verse for embedding generation.
- * Only includes text, quote, and paragraph types, filtering out other content like sections and footnotes.
- *
- * @param verseData - The verse data object containing text elements
- * @returns The extracted text joined by spaces, or empty string if no text content
+ * Includes text, quote, paragraph, and section types; excludes footnotes and references.
  */
 export const extractVerseText = (verseData: Verse): string => {
   return verseData.text

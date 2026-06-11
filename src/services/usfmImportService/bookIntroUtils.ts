@@ -126,6 +126,10 @@ export const extractBookIntro = (
     pushElement(sidebarContent ?? elements, header)
   }
 
+  if (sidebarContent !== null) {
+    console.warn("bookIntroUtils: unclosed \\esb sidebar block — content discarded")
+  }
+
   return elements.length > 0 ? elements : undefined
 }
 

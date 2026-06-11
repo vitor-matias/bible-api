@@ -33,13 +33,18 @@ export const searchVersesController = async (req: Request, res: Response) => {
       })
     }
   } else {
-    res.json(
-      await searchVerses(
-        client,
-        normalizeText(text as string),
-        pageNumber,
-        limitNumber,
-      ),
-    )
+    try {
+      res.json(
+        await searchVerses(
+          client,
+          normalizeText(text as string),
+          pageNumber,
+          limitNumber,
+        ),
+      )
+    } catch (error) {
+      console.error("Search error:", error)
+      return res.status(500).json({ error: "Search failed" })
+    }
   }
 }
