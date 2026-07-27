@@ -24,7 +24,11 @@ if (trustProxy) {
 }
 
 app.use(helmet())
-app.use(cors())
+
+// Public read-only API: allow any origin unless CORS_ORIGIN restricts it
+// (comma-separated list of allowed origins)
+const corsOrigin = process.env.CORS_ORIGIN
+app.use(cors({ origin: corsOrigin ? corsOrigin.split(",") : "*" }))
 
 const client = createClient({ url: process.env.DB_URL })
 client.on("error", (error) => {

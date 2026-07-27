@@ -1,5 +1,6 @@
 import type { createClient } from "redis"
-import { storeVerse } from "./storeVerse"
+import { generateEmbeddings } from "../openai/embeddings"
+import { extractVerseText, storeVerse } from "./storeVerse"
 
 const compareVerseLabels = (
   a: [string, USFMVerse],
@@ -26,10 +27,43 @@ export const storeChapter = async (
   chapter: USFMChapter,
 ): Promise<void> => {
   let verseNumber = 1
+  const versesData: {
+    verseData: Verse
+    text: string
+  }[] = []
+
+  // Tracks an empty quote (like \q1) that appears at the end of a verse, so it can
+  // be applied to the beginning of the next verse.
+  let pendingQuote: USFMVerseObject | null = null
 
   for (const [verseLabel, verse] of Object.entries(chapter).sort(
     compareVerseLabels,
   )) {
+    // If the previous verse ended with an empty quote block, apply its tag
+    // to the first object of the current verse if it's plain text.
+    // USFM authors sometimes place a quote tag (e.g. \q1) before a verse marker (\v)
+    // to style the upcoming verse, but the parser assigns that empty quote to the
+    // end of the *previous* verse. This retroactively fixes that.
+    if (pendingQuote) {
+      pendingQuote.text = "\u200B"
+      verse.verseObjects.unshift(pendingQuote)
+      pendingQuote = null
+    }
+
+    // Check if the current verse ends with an empty quote block.
+    // If so, remove it from this verse and save it as pending
+    // so it can be applied to the beginning of the next verse instead.
+    if (verse.verseObjects.length > 0) {
+      const lastObj = verse.verseObjects[verse.verseObjects.length - 1]
+      if (
+        lastObj.type === "quote" &&
+        (!lastObj.text || lastObj.text.trim() === "")
+      ) {
+        pendingQuote = lastObj
+        verse.verseObjects.pop()
+      }
+    }
+
     if (verse.verseObjects.some((verseObject) => verseObject.tag === "ms")) {
       let objectsForVerse: USFMVerseObject[] = []
       verseNumber = verseLabel === "front" ? 0 : verseNumber
@@ -38,7 +72,7 @@ export const storeChapter = async (
       for (const verseObject of Object.values(verse.verseObjects)) {
         if (verseObject.tag === "va") {
           if (labelForVerse !== "") {
-            await storeVerse(
+            const verseData = await storeVerse(
               client,
               bookCode,
               bookNumber,
@@ -47,6 +81,12 @@ export const storeChapter = async (
               labelForVerse,
               objectsForVerse,
             )
+            if (verseNumber > 0) {
+              const text = extractVerseText(verseData)
+              if (text.trim().length > 0) {
+                versesData.push({ verseData, text })
+              }
+            }
             objectsForVerse = []
 
             verseNumber++
@@ -58,7 +98,7 @@ export const storeChapter = async (
       }
 
       if (labelForVerse !== "") {
-        await storeVerse(
+        const verseData = await storeVerse(
           client,
           bookCode,
           bookNumber,
@@ -67,10 +107,16 @@ export const storeChapter = async (
           labelForVerse,
           objectsForVerse,
         )
+        if (verseNumber > 0) {
+          const text = extractVerseText(verseData)
+          if (text.trim().length > 0) {
+            versesData.push({ verseData, text })
+          }
+        }
         verseNumber++
       }
     } else if (verseLabel !== "front") {
-      await storeVerse(
+      const verseData = await storeVerse(
         client,
         bookCode,
         bookNumber,
@@ -79,6 +125,12 @@ export const storeChapter = async (
         verseLabel,
         verse.verseObjects,
       )
+      if (verseNumber > 0) {
+        const text = extractVerseText(verseData)
+        if (text.trim().length > 0) {
+          versesData.push({ verseData, text })
+        }
+      }
       verseNumber++
     } else {
       await storeVerse(
@@ -112,4 +164,36 @@ export const storeChapter = async (
     lastVerse: verseNumber - 1,
   }
   await client.json.set(`chapter:${bookCode}:${chapterNumber}`, "$", meta)
+
+  // Generate embeddings in batch for all verses in the chapter
+  if (versesData.length > 0) {
+    const texts = versesData.map((v) => v.text)
+
+    console.log(
+      `Generating embeddings for chapter ${chapterNumber} with ${texts.length} verses...`,
+    )
+    try {
+      const embeddings = await generateEmbeddings(texts)
+
+      // Store all embeddings
+      for (let i = 0; i < versesData.length; i++) {
+        const v = versesData[i].verseData
+        if (embeddings[i] && embeddings[i].length > 0) {
+          await client.json.set(
+            `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
+            "$",
+            {
+              key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
+              embedding: embeddings[i],
+            },
+          )
+        }
+      }
+    } catch (error) {
+      console.error(
+        `Failed to generate embeddings for chapter ${chapterNumber}:`,
+        error,
+      )
+    }
+  }
 }

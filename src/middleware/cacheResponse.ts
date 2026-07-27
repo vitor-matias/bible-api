@@ -18,10 +18,11 @@ export const cacheResponse =
       .map((name) => [name, req.query[name]])
       .filter(([, value]) => typeof value === "string" && value !== "")
       .map(([name, value]) => `${name}=${value}`)
-      .sort()
+      .sort((a, b) => a.localeCompare(b))
       .join("&")
 
-    const key = `cache:${req.path}${params ? `?${params}` : ""}`
+    const querySuffix = params ? `?${params}` : ""
+    const key = `cache:${req.path}${querySuffix}`
 
     try {
       const cachedResponse = await client.get(key)

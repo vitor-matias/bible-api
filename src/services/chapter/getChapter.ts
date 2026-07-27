@@ -29,5 +29,9 @@ export const getChapter = async (
     }
   }
 
-  return { bookId, number: chapterNumber, verses }
+  const chapterTitle = await client.get(
+    `chapterTitle:${bookId}:${chapterNumber}`,
+  )
+
+  return { bookId, number: chapterNumber, verses, title: chapterTitle || "" }
 }

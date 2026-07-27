@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from "express"
 import { sanitizeSearchQuery } from "../util/sanitizeSearchQuery"
 
-const MAX_TEXT_LENGTH = 100
+const MAX_TEXT_LENGTH = 200
 const MAX_PAGE = 10000
 const MAX_LIMIT = 50
 
@@ -11,6 +11,10 @@ const isPositiveInteger = (value: unknown): value is string =>
 /**
  * Validates and sanitizes search query parameters, storing the parsed
  * values in res.locals.searchParams for the controller.
+ *
+ * `text` is the trimmed raw query (used for semantic search, where it is
+ * sent to the embeddings API, not into a query string); `sanitizedText`
+ * additionally strips RediSearch syntax for the keyword search.
  */
 export const validateSearchParams = (
   req: Request,
@@ -23,13 +27,15 @@ export const validateSearchParams = (
     return res.status(400).json({ error: 'Query parameter "text" is required' })
   }
 
-  if (text.length > MAX_TEXT_LENGTH) {
+  const trimmedText = text.trim()
+
+  if (trimmedText.length > MAX_TEXT_LENGTH) {
     return res.status(400).json({
       error: `Query parameter "text" must be at most ${MAX_TEXT_LENGTH} characters`,
     })
   }
 
-  const sanitizedText = sanitizeSearchQuery(text)
+  const sanitizedText = sanitizeSearchQuery(trimmedText)
   if (sanitizedText === "") {
     return res.status(400).json({
       error: 'Query parameter "text" contains no searchable characters',
@@ -64,7 +70,8 @@ export const validateSearchParams = (
   }
 
   res.locals.searchParams = {
-    text: sanitizedText,
+    text: trimmedText,
+    sanitizedText,
     page: pageNumber,
     limit: limitNumber,
   }

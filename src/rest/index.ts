@@ -4,6 +4,7 @@ import { cacheResponse } from "../middleware/cacheResponse"
 import {
   generalRateLimiter,
   searchRateLimiter,
+  semanticSearchRateLimiter,
 } from "../middleware/rateLimiter"
 import { validateSearchParams } from "../middleware/validateSearchParams"
 import { getBookController } from "./book"
@@ -12,7 +13,7 @@ import { getChapterController } from "./chapter"
 import { searchVersesController } from "./search"
 import { getVerseController, getVersesController } from "./verses"
 
-export default (
+const setEndpoints = (
   app: express.Express,
   client: ReturnType<typeof createClient>,
 ): void => {
@@ -23,11 +24,12 @@ export default (
 
   app.use(generalRateLimiter)
 
-  app.get("/v1/books", cacheResponse(), getBooksController)
+  app.get("/v1/books", cacheResponse(["withChapters"]), getBooksController)
 
   app.get(
     "/v1/search",
     searchRateLimiter,
+    semanticSearchRateLimiter,
     validateSearchParams,
     cacheResponse(["text", "page", "limit", "semantic"]),
     searchVersesController,
@@ -54,3 +56,5 @@ export default (
   }
   app.use(errorHandler)
 }
+
+export default setEndpoints

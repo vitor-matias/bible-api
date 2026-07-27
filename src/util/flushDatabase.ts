@@ -6,17 +6,22 @@ const APP_KEY_PATTERNS = [
   "verse:*",
   "chapter:*",
   "chapterTitle:*",
+  "embedding:*",
   "cache:*",
   "books",
 ]
 
+const INDEXES = ["idx:verseText", "idx:verseEmbeddings"]
+
 export const flushDatabase = async (
   client: ReturnType<typeof createClient>,
 ) => {
-  try {
-    await client.ft.dropIndex("idx:verseText")
-  } catch {
-    // Index does not exist yet
+  for (const index of INDEXES) {
+    try {
+      await client.ft.dropIndex(index)
+    } catch {
+      // Index does not exist yet
+    }
   }
 
   for (const pattern of APP_KEY_PATTERNS) {
@@ -54,6 +59,28 @@ export const flushDatabase = async (
       ON: "JSON",
       PREFIX: "verse:",
       LANGUAGE: "Portuguese",
+    },
+  )
+
+  await client.ft.create(
+    "idx:verseEmbeddings",
+    {
+      "$.key": {
+        type: "TEXT",
+        AS: "key",
+      },
+      "$.embedding": {
+        type: "VECTOR",
+        AS: "embedding",
+        ALGORITHM: "HNSW",
+        TYPE: "FLOAT32",
+        DIM: 1536, // Dimension for text-embedding-3-small
+        DISTANCE_METRIC: "COSINE",
+      },
+    },
+    {
+      ON: "JSON",
+      PREFIX: "embedding:",
     },
   )
 }
