@@ -4,58 +4,60 @@ export const flushDatabase = async () => {
   const client = createClient({ url: process.env.DB_URL })
   client.on("error", (err) => console.error(`Redis client error: ${err}`))
   await client.connect()
-  // flushDb only clears the current logical DB, unlike flushAll which wipes
-  // every DB on the (possibly shared) Redis instance.
-  await client.flushDb()
+  try {
+    // flushDb only clears the current logical DB, unlike flushAll which wipes
+    // every DB on the (possibly shared) Redis instance.
+    await client.flushDb()
 
-  await client.ft.create(
-    "idx:verseText",
-    {
-      "$.text[*].text": {
-        type: "TEXT",
-        AS: "text",
+    await client.ft.create(
+      "idx:verseText",
+      {
+        "$.text[*].text": {
+          type: "TEXT",
+          AS: "text",
+        },
+        "$.text[*].normalizedText": {
+          type: "TEXT",
+          AS: "normalizedText",
+        },
+        "$.searchId": {
+          type: "TEXT",
+          AS: "searchId",
+        },
+        "$.number": {
+          type: "NUMERIC",
+          AS: "number",
+        },
       },
-      "$.text[*].normalizedText": {
-        type: "TEXT",
-        AS: "normalizedText",
+      {
+        ON: "JSON",
+        PREFIX: "verse:",
+        LANGUAGE: "Portuguese",
       },
-      "$.searchId": {
-        type: "TEXT",
-        AS: "searchId",
-      },
-      "$.number": {
-        type: "NUMERIC",
-        AS: "number",
-      },
-    },
-    {
-      ON: "JSON",
-      PREFIX: "verse:",
-      LANGUAGE: "Portuguese",
-    },
-  )
+    )
 
-  await client.ft.create(
-    "idx:verseEmbeddings",
-    {
-      "$.key": {
-        type: "TEXT",
-        AS: "key",
+    await client.ft.create(
+      "idx:verseEmbeddings",
+      {
+        "$.key": {
+          type: "TEXT",
+          AS: "key",
+        },
+        "$.embedding": {
+          type: "VECTOR",
+          AS: "embedding",
+          ALGORITHM: "HNSW",
+          TYPE: "FLOAT32",
+          DIM: 1536, // Dimension for text-embedding-3-small
+          DISTANCE_METRIC: "COSINE",
+        },
       },
-      "$.embedding": {
-        type: "VECTOR",
-        AS: "embedding",
-        ALGORITHM: "HNSW",
-        TYPE: "FLOAT32",
-        DIM: 1536, // Dimension for text-embedding-3-small
-        DISTANCE_METRIC: "COSINE",
+      {
+        ON: "JSON",
+        PREFIX: "embedding:",
       },
-    },
-    {
-      ON: "JSON",
-      PREFIX: "embedding:",
-    },
-  )
-
-  await client.quit()
+    )
+  } finally {
+    await client.quit()
+  }
 }
