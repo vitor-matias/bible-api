@@ -32,7 +32,8 @@ export const cacheResponse =
       }
     }
 
-    const params = pairs.sort((a, b) => a.localeCompare(b)).join("&")
+    pairs.sort((a, b) => a.localeCompare(b))
+    const params = pairs.join("&")
 
     const querySuffix = params ? `?${params}` : ""
     const key = `cache:${req.path}${querySuffix}`
