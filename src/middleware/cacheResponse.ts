@@ -8,18 +8,31 @@ const CACHE_TTL_SECONDS = 86400
  * The cache key is built from the request path plus an allowlist of query
  * parameters, so arbitrary query strings cannot inflate the keyspace. Only
  * 200 responses are stored — errors and partial results are never cached.
+ *
+ * `valueParams` are URL-encoded into the key, so values containing `&`/`=`
+ * cannot collide with other parameter combinations. `flagParams` are
+ * booleans: they enter the key only as `name=true` when the value is
+ * exactly "true", so arbitrary flag values all share the "off" key.
  */
 export const cacheResponse =
-  (relevantParams: string[] = []) =>
+  (valueParams: string[] = [], flagParams: string[] = []) =>
   async (req: Request, res: Response, next: NextFunction) => {
     const { client } = res.locals
 
-    const params = relevantParams
-      .map((name) => [name, req.query[name]])
-      .filter(([, value]) => typeof value === "string" && value !== "")
-      .map(([name, value]) => `${name}=${value}`)
-      .sort((a, b) => a.localeCompare(b))
-      .join("&")
+    const pairs: string[] = []
+    for (const name of valueParams) {
+      const value = req.query[name]
+      if (typeof value === "string" && value !== "") {
+        pairs.push(`${encodeURIComponent(name)}=${encodeURIComponent(value)}`)
+      }
+    }
+    for (const name of flagParams) {
+      if (req.query[name] === "true") {
+        pairs.push(`${encodeURIComponent(name)}=true`)
+      }
+    }
+
+    const params = pairs.sort((a, b) => a.localeCompare(b)).join("&")
 
     const querySuffix = params ? `?${params}` : ""
     const key = `cache:${req.path}${querySuffix}`

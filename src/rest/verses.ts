@@ -1,20 +1,16 @@
 import type { Request, Response } from "express"
 import { getVerse } from "../services/verse/getVerse"
+import { parseRouteNumber } from "../util/parseRouteNumber"
 
 const MAX_VERSE_RANGE = 200
-
-const parseVerseNumber = (value: string): number | null => {
-  const parsed = Number.parseInt(value, 10)
-  return Number.isInteger(parsed) && parsed >= 0 ? parsed : null
-}
 
 export const getVerseController = async (req: Request, res: Response) => {
   const { book, chapter, verse } = req.params
 
   const { client } = res.locals
 
-  const chapterNumber = parseVerseNumber(chapter)
-  const verseNumber = parseVerseNumber(verse)
+  const chapterNumber = parseRouteNumber(chapter)
+  const verseNumber = parseRouteNumber(verse)
 
   if (chapterNumber === null || verseNumber === null) {
     return res.status(400).json({ error: "Chapter and verse must be numbers" })
@@ -32,9 +28,9 @@ export const getVersesController = async (req: Request, res: Response) => {
   const { book, chapter, startVerse, endVerse } = req.params
   const { client } = res.locals
 
-  const chapterNumber = parseVerseNumber(chapter)
-  const start = parseVerseNumber(startVerse)
-  const end = parseVerseNumber(endVerse)
+  const chapterNumber = parseRouteNumber(chapter)
+  const start = parseRouteNumber(startVerse)
+  const end = parseRouteNumber(endVerse)
 
   if (chapterNumber === null || start === null || end === null) {
     return res.status(400).json({ error: "Chapter and verses must be numbers" })

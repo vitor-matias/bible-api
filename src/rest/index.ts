@@ -24,14 +24,14 @@ const setEndpoints = (
 
   app.use(generalRateLimiter)
 
-  app.get("/v1/books", cacheResponse(["withChapters"]), getBooksController)
+  app.get("/v1/books", cacheResponse([], ["withChapters"]), getBooksController)
 
   app.get(
     "/v1/search",
     searchRateLimiter,
     semanticSearchRateLimiter,
     validateSearchParams,
-    cacheResponse(["text", "page", "limit", "semantic"]),
+    cacheResponse(["text", "page", "limit"], ["semantic"]),
     searchVersesController,
   )
 
@@ -47,7 +47,7 @@ const setEndpoints = (
 
   app.get("/v1/:book/:chapter", cacheResponse(), getChapterController)
 
-  app.get("/v1/:book", cacheResponse(["withVerses"]), getBookController)
+  app.get("/v1/:book", cacheResponse([], ["withVerses"]), getBookController)
 
   // Final error handler: never leak stack traces to clients
   const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {
