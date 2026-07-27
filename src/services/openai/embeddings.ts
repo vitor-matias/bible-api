@@ -7,7 +7,13 @@ const getClient = (): OpenAI => {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error("OPENAI_API_KEY environment variable is required")
     }
-    _openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+    // Bound the request lifetime so a stalled OpenAI call can't hang a search
+    // request indefinitely; 30s still leaves headroom for the larger
+    // per-chapter batches during import. Default retries (2) are kept.
+    _openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      timeout: 30_000,
+    })
   }
   return _openai
 }

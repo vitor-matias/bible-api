@@ -34,9 +34,13 @@ export const checkCache = async (
     res.json = (body) => {
       if (res.statusCode === 200) {
         const payload: CachedResponse = { status: res.statusCode, body }
-        client.json
-          .set(cacheKey, "$", payload)
-          .then(() => client.expire(cacheKey, CACHE_TTL_SECONDS))
+        // Set + expire run in one MULTI so a key can never be left without a
+        // TTL (volatile-lru only evicts keys that have one).
+        client
+          .multi()
+          .json.set(cacheKey, "$", payload)
+          .expire(cacheKey, CACHE_TTL_SECONDS)
+          .exec()
           .catch((err: Error) => {
             console.error(`Error setting cache: ${err}`)
           })

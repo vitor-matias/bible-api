@@ -26,11 +26,12 @@ export const getChapter = async (
     throw new Error("Not Found")
   }
 
+  // One round trip for the whole chapter. With the "$" path each entry comes
+  // back as a single-element array (or null for missing keys).
+  const versesData = await client.json.mGet(versesToFetch, "$")
   const verses: Verse[] = []
-  for (const key of versesToFetch) {
-    const verseData = await client.json.get(key)
-    const verse = verseData ? (verseData as Verse) : null
-
+  for (const doc of versesData) {
+    const verse = (doc as unknown as Verse[] | null)?.[0]
     if (verse) {
       verses.push(verse)
     }

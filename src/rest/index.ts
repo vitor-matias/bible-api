@@ -14,6 +14,9 @@ export default (app: express.Express): void => {
   // required: without it, node-redis throws on connection loss and crashes the
   // process. node-redis reconnects automatically and queues commands meanwhile.
   let client: ReturnType<typeof createClient> | undefined
+  // Concurrent requests arriving before the socket is open share one
+  // handshake; calling connect() twice on the same client throws.
+  let connecting: Promise<unknown> | undefined
 
   const getClient = async () => {
     if (!client) {
@@ -21,7 +24,10 @@ export default (app: express.Express): void => {
       client.on("error", (err) => console.error(`Redis client error: ${err}`))
     }
     if (!client.isOpen) {
-      await client.connect()
+      connecting ??= client.connect().finally(() => {
+        connecting = undefined
+      })
+      await connecting
     }
     return client
   }
@@ -50,7 +56,7 @@ export default (app: express.Express): void => {
   )
   app.get("/v1/books", checkCache, getBooksController)
 
-  app.get("/v1/:book/:chapter", getChapterController)
+  app.get("/v1/:book/:chapter", checkCache, getChapterController)
 
   app.get("/v1/:book", checkCache, getBookController)
 }

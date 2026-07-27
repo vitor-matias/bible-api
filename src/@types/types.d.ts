@@ -67,7 +67,7 @@ type IntroElement =
 
 type IntroTitle = {
   type: "introTitle"
-  level: number
+  level: 1 | 2
   text: string
 }
 
@@ -78,7 +78,7 @@ type IntroParagraph = {
 
 type IntroSection = {
   type: "introSection"
-  level: number
+  level: 1 | 2
   text: string
 }
 
