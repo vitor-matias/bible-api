@@ -1,5 +1,10 @@
 import type { createClient, SearchReply } from "redis"
 
+// Escapes characters that would break out of the quoted phrase in a
+// RediSearch query, preventing query injection via user-supplied text.
+const escapeSearchPhrase = (text: string): string =>
+  text.replace(/[\\"]/g, "\\$&")
+
 export const searchVerses = async (
   client: ReturnType<typeof createClient>,
   search: string,
@@ -13,7 +18,7 @@ export const searchVerses = async (
   // Add filter for number >= 1 in the RediSearch query
   const results = (await client.ft.SEARCH(
     "idx:verseText",
-    `@normalizedText: "${search}" @number:[1 +inf]`,
+    `@normalizedText: "${escapeSearchPhrase(search)}" @number:[1 +inf]`,
     {
       LIMIT: {
         from: offset,

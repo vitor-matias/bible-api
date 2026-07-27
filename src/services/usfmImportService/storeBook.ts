@@ -14,6 +14,7 @@ export const storeBook = async (usfmBook: USFMBook): Promise<void> => {
         connectTimeout: 100000,
       },
     })
+    client.on("error", (err) => console.error(`Redis client error: ${err}`))
     await client.connect()
 
     const bookCount = await client.rPush("books", bookId)

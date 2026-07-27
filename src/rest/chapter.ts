@@ -14,7 +14,8 @@ export const getChapterController = async (req: Request, res: Response) => {
       return res.json(chapterData)
     }
   } catch (error) {
-    return res.status(404).json(error)
+    console.error("Get chapter error:", error)
+    return res.status(404).json({ error: "Chapter not found" })
   }
 
   res.status(404).json({ error: "Chapter not found" })

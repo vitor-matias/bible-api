@@ -1,7 +1,7 @@
 import type express from "express"
 import { createClient } from "redis"
 import { checkCache } from "../middleware/checkCache"
-import { searchRateLimiter } from "../middleware/rateLimiter"
+import { searchRateLimit } from "../middleware/rateLimiter"
 import { validateSearchParams } from "../middleware/validateSearchParams"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
@@ -10,15 +10,29 @@ import { searchVersesController } from "./search"
 import { getVerseController, getVersesController } from "./verses"
 
 export default (app: express.Express): void => {
-  let client: ReturnType<typeof createClient>
+  // A single shared client is reused across requests. The "error" listener is
+  // required: without it, node-redis throws on connection loss and crashes the
+  // process. node-redis reconnects automatically and queues commands meanwhile.
+  let client: ReturnType<typeof createClient> | undefined
 
-  app.use(async (_req, res, next) => {
-    if (!client || !client.isReady) {
+  const getClient = async () => {
+    if (!client) {
       client = createClient({ url: process.env.DB_URL })
+      client.on("error", (err) => console.error(`Redis client error: ${err}`))
+    }
+    if (!client.isOpen) {
       await client.connect()
     }
-    res.locals.client = client
-    next()
+    return client
+  }
+
+  app.use(async (_req, res, next) => {
+    try {
+      res.locals.client = await getClient()
+      next()
+    } catch (error) {
+      next(error)
+    }
   })
 
   // Endpoint to get a specific verse
@@ -29,7 +43,7 @@ export default (app: express.Express): void => {
 
   app.get(
     "/v1/search",
-    searchRateLimiter,
+    searchRateLimit,
     validateSearchParams,
     checkCache,
     searchVersesController,

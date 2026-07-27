@@ -2,8 +2,11 @@ import { createClient } from "redis"
 
 export const flushDatabase = async () => {
   const client = createClient({ url: process.env.DB_URL })
+  client.on("error", (err) => console.error(`Redis client error: ${err}`))
   await client.connect()
-  await client.flushAll()
+  // flushDb only clears the current logical DB, unlike flushAll which wipes
+  // every DB on the (possibly shared) Redis instance.
+  await client.flushDb()
 
   await client.ft.create(
     "idx:verseText",

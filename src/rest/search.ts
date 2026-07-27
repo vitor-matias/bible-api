@@ -23,14 +23,7 @@ export const searchVersesController = async (req: Request, res: Response) => {
       return res.json(result)
     } catch (error) {
       console.error("Semantic search error:", error)
-      const errorMessage =
-        error instanceof Error && error.message
-          ? error.message
-          : "An unexpected error occurred during semantic search"
-      return res.status(500).json({
-        error: "Semantic search failed",
-        details: errorMessage,
-      })
+      return res.status(500).json({ error: "Semantic search failed" })
     }
   } else {
     try {
