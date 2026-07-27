@@ -1,20 +1,15 @@
-import { createClient } from "redis"
+import type { createClient } from "redis"
 import { getBookHeader } from "../book/getBookHeader"
 import { getBookId } from "../book/getBookId"
 import { storeChapter } from "./storeChapter"
 
-export const storeBook = async (usfmBook: USFMBook): Promise<void> => {
+export const storeBook = async (
+  client: ReturnType<typeof createClient>,
+  usfmBook: USFMBook,
+): Promise<void> => {
   const bookId = getBookId(usfmBook)?.toLowerCase()
 
   if (bookId) {
-    const client = createClient({
-      url: process.env.DB_URL,
-      socket: {
-        connectTimeout: 100000,
-      },
-    })
-    await client.connect()
-
     const bookCount = await client.rPush("books", bookId)
 
     const bookName = getBookHeader(usfmBook, "toc1")
@@ -40,6 +35,5 @@ export const storeBook = async (usfmBook: USFMBook): Promise<void> => {
         chapter,
       )
     }
-    await client.quit()
   }
 }

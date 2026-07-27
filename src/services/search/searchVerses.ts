@@ -6,11 +6,10 @@ export const searchVerses = async (
   page: number,
   pageSize: number,
 ): Promise<VersePage> => {
-  console.warn(`Searching for: ${search}, page: ${page}, pageSize: ${pageSize}`)
-
   const offset = (page - 1) * pageSize
 
-  // Add filter for number >= 1 in the RediSearch query
+  // `search` must already be sanitized (see sanitizeSearchQuery) so it cannot
+  // escape the quoted phrase or inject RediSearch query syntax.
   const results = (await client.ft.SEARCH(
     "idx:verseText",
     `@normalizedText: "${search}" @number:[1 +inf]`,
@@ -45,8 +44,6 @@ export const searchVerses = async (
       totalPages: totalPages,
     }
   }
-
-  console.warn(`Found ${results.total} results (page ${page}/${totalPages})`)
 
   return {
     verses: results.documents.map(

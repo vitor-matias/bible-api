@@ -103,4 +103,13 @@ export const storeChapter = async (
       [],
     )
   }
+
+  // Chapter metadata lets readers fetch verses directly by number
+  // instead of scanning the keyspace
+  const meta: ChapterMeta = {
+    bookId: bookCode,
+    number: chapterNumber,
+    lastVerse: verseNumber - 1,
+  }
+  await client.json.set(`chapter:${bookCode}:${chapterNumber}`, "$", meta)
 }

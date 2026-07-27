@@ -7,20 +7,26 @@ export const getBook = async (
   bookId: Book["id"],
   getChapters = false,
 ): Promise<Book | null> => {
-  const book = (await client.json.get(`book:${bookId}`)) as Book
+  const book = (await client.json.get(`book:${bookId}`)) as Book | null
 
   if (!book) return null
 
-  book.chapters = []
+  const chapterNumbers = Array.from(
+    { length: book.chapterCount },
+    (_, i) => i + 1,
+  )
 
-  if (getChapters) {
-    for (let i = 1; i <= book.chapterCount; i++) {
-      book.chapters.push(await getChapter(client, bookId, i))
-    }
-  } else {
-    for (let i = 1; i <= book.chapterCount; i++) {
-      book.chapters.push(await getBookChapterTitle(client, bookId, i))
-    }
-  }
+  const chapters = await Promise.all(
+    chapterNumbers.map((chapterNumber) =>
+      getChapters
+        ? getChapter(client, bookId, chapterNumber)
+        : getBookChapterTitle(client, bookId, chapterNumber),
+    ),
+  )
+
+  book.chapters = chapters.filter(
+    (chapter): chapter is Chapter => chapter != null,
+  )
+
   return book
 }

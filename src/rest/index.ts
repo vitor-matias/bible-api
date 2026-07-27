@@ -1,35 +1,56 @@
 import type express from "express"
-import { createClient } from "redis"
-import { checkCache } from "../middleware/checkCache"
-import { searchRateLimiter } from "../middleware/rateLimiter"
+import type { createClient } from "redis"
+import { cacheResponse } from "../middleware/cacheResponse"
+import {
+  generalRateLimiter,
+  searchRateLimiter,
+} from "../middleware/rateLimiter"
+import { validateSearchParams } from "../middleware/validateSearchParams"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
 import { searchVersesController } from "./search"
 import { getVerseController, getVersesController } from "./verses"
 
-export default (app: express.Express): void => {
-  let client: ReturnType<typeof createClient>
-
-  app.use(async (_req, res, next) => {
-    if (!client || !client.isReady) {
-      client = createClient({ url: process.env.DB_URL })
-      await client.connect()
-    }
+export default (
+  app: express.Express,
+  client: ReturnType<typeof createClient>,
+): void => {
+  app.use((_req, res, next) => {
     res.locals.client = client
     next()
   })
 
-  // Endpoint to get a specific verse
-  app.get("/v1/:book/:chapter/:verse", checkCache, getVerseController)
+  app.use(generalRateLimiter)
+
+  app.get("/v1/books", cacheResponse(), getBooksController)
+
+  app.get(
+    "/v1/search",
+    searchRateLimiter,
+    validateSearchParams,
+    cacheResponse(["text", "page", "limit", "semantic"]),
+    searchVersesController,
+  )
 
   // Endpoint to get a specific verse
-  app.get("/v1/:book/:chapter/:startVerse/:endVerse", getVersesController)
+  app.get("/v1/:book/:chapter/:verse", cacheResponse(), getVerseController)
 
-  app.get("/v1/books", getBooksController)
-  app.get("/v1/search", searchRateLimiter, checkCache, searchVersesController)
+  // Endpoint to get a range of verses
+  app.get(
+    "/v1/:book/:chapter/:startVerse/:endVerse",
+    cacheResponse(),
+    getVersesController,
+  )
 
-  app.get("/v1/:book/:chapter", getChapterController)
+  app.get("/v1/:book/:chapter", cacheResponse(), getChapterController)
 
-  app.get("/v1/:book", checkCache, getBookController)
+  app.get("/v1/:book", cacheResponse(["withVerses"]), getBookController)
+
+  // Final error handler: never leak stack traces to clients
+  const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {
+    console.error("Unhandled request error:", err)
+    res.status(500).json({ error: "Internal server error" })
+  }
+  app.use(errorHandler)
 }

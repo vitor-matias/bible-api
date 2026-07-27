@@ -54,6 +54,12 @@ type Book = {
   chapters?: Chapter[]
 }
 
+type ChapterMeta = {
+  bookId: Book["id"]
+  number: number
+  lastVerse: number
+}
+
 type Chapter = {
   bookId: Book["id"]
   number: number
