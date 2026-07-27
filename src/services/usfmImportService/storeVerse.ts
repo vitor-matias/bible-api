@@ -90,8 +90,8 @@ export const storeVerse = async (
         // Extract \fr ... \ft ... from each part
         // Captures are greedy with no overlapping quantifiers (linear time);
         // surrounding whitespace is stripped by the .trim() calls below.
-        const frMatch = part.match(/\\fr\s([^\\]+)\\ft/)
-        const ftMatch = part.match(/\\ft\s([^\\]+)(?=\\fr|\\f\*|$)/)
+        const frMatch = /\\fr\s([^\\]+)\\ft/.exec(part)
+        const ftMatch = /\\ft\s([^\\]+)(?=\\fr|\\f\*|$)/.exec(part)
         if (frMatch && ftMatch) {
           const footnoteReference = frMatch[1].trim()
           const footnoteText = ftMatch[1].trim()
