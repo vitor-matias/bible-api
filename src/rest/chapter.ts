@@ -1,5 +1,6 @@
 import type { Request, Response } from "express"
 import { getChapter } from "../services/chapter/getChapter"
+import { NotFoundError } from "../util/errors"
 
 export const getChapterController = async (req: Request, res: Response) => {
   const { book, chapter } = req.params
@@ -14,9 +15,9 @@ export const getChapterController = async (req: Request, res: Response) => {
       return res.json(chapterData)
     }
   } catch (error) {
-    // getChapter signals a missing chapter with "Not Found"; anything else
+    // getChapter signals a missing chapter with NotFoundError; anything else
     // (e.g. Redis connectivity) is an operational failure, not a 404.
-    if (error instanceof Error && error.message === "Not Found") {
+    if (error instanceof NotFoundError) {
       return res.status(404).json({ error: "Chapter not found" })
     }
     console.error("Get chapter error:", error)

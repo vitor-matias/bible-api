@@ -23,7 +23,7 @@ export const semanticSearchVerses = async (
       verses: [],
       total: 0,
       currentPage: page,
-      totalPages: Math.ceil(KNN_MAX_RESULTS / pageSize),
+      totalPages: 0,
     }
   }
 

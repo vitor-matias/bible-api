@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { NotFoundError } from "../../util/errors"
 
 // Book ids come from USFM id headers (e.g. "gen", "1co"); restrict to
 // alphanumerics so they can't inject glob metacharacters into the SCAN pattern.
@@ -10,7 +11,7 @@ export const getChapter = async (
   chapterNumber: Chapter["number"],
 ): Promise<Chapter> => {
   if (!BOOK_ID_PATTERN.test(bookId) || !Number.isInteger(chapterNumber)) {
-    throw new Error("Not Found")
+    throw new NotFoundError()
   }
 
   // SCAN is non-blocking, unlike KEYS which scans the whole keyspace at once.
@@ -23,7 +24,7 @@ export const getChapter = async (
   }
 
   if (versesToFetch.length === 0) {
-    throw new Error("Not Found")
+    throw new NotFoundError()
   }
 
   // One round trip for the whole chapter. With the "$" path each entry comes
