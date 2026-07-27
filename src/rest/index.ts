@@ -1,7 +1,8 @@
 import type express from "express"
 import { createClient } from "redis"
 import { checkCache } from "../middleware/checkCache"
-import { searchRateLimit } from "../middleware/rateLimiter"
+import { booksRateLimit, searchRateLimit } from "../middleware/rateLimiter"
+import { validateBooksParams } from "../middleware/validateBooksParams"
 import { validateSearchParams } from "../middleware/validateSearchParams"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
@@ -54,7 +55,13 @@ export default (app: express.Express): void => {
     checkCache,
     searchVersesController,
   )
-  app.get("/v1/books", checkCache, getBooksController)
+  app.get(
+    "/v1/books",
+    booksRateLimit,
+    validateBooksParams,
+    checkCache,
+    getBooksController,
+  )
 
   app.get("/v1/:book/:chapter", checkCache, getChapterController)
 

@@ -2,6 +2,17 @@ import type { createClient } from "redis"
 import { generateEmbeddings } from "../openai/embeddings"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
+// Repeated failures indicate a systemic problem (bad OPENAI_API_KEY, outage)
+// rather than a transient one, so the import aborts instead of silently
+// producing a corpus without embeddings.
+const MAX_CONSECUTIVE_EMBEDDING_FAILURES = 3
+let consecutiveEmbeddingFailures = 0
+let embeddingFailureCount = 0
+
+// Chapters whose embeddings failed transiently during this import; semantic
+// search misses their verses until a reimport.
+export const getEmbeddingFailureCount = () => embeddingFailureCount
+
 const compareVerseLabels = (
   a: [string, USFMVerse],
   b: [string, USFMVerse],
@@ -166,11 +177,12 @@ export const storeChapter = async (
     try {
       const embeddings = await generateEmbeddings(texts)
 
-      // Store all embeddings
+      // Store all embeddings in one pipelined round trip
+      const multi = client.multi()
       for (let i = 0; i < versesData.length; i++) {
         const v = versesData[i].verseData
         if (embeddings[i] && embeddings[i].length > 0) {
-          await client.json.set(
+          multi.json.set(
             `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
             "$",
             {
@@ -180,11 +192,22 @@ export const storeChapter = async (
           )
         }
       }
+      await multi.exec()
+      consecutiveEmbeddingFailures = 0
     } catch (error) {
+      embeddingFailureCount++
+      consecutiveEmbeddingFailures++
       console.error(
         `Failed to generate embeddings for chapter ${chapterNumber}:`,
         error,
       )
+      // A missing/invalid API key or an OpenAI outage would otherwise fail
+      // every chapter one by one, leaving the whole corpus without embeddings.
+      if (consecutiveEmbeddingFailures >= MAX_CONSECUTIVE_EMBEDDING_FAILURES) {
+        throw new Error(
+          `Embedding generation failed for ${consecutiveEmbeddingFailures} chapters in a row — aborting import. Last error: ${error}`,
+        )
+      }
     }
   }
 }

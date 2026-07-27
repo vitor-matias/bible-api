@@ -5,6 +5,7 @@ import { createClient } from "redis"
 import setEndpoints from "./rest"
 import { readBook } from "./services/usfmImportService/readBook"
 import { storeBook } from "./services/usfmImportService/storeBook"
+import { getEmbeddingFailureCount } from "./services/usfmImportService/storeChapter"
 import { flushDatabase } from "./util/flushDatabase"
 
 require("dotenv").config()
@@ -76,6 +77,13 @@ async function loadFilesIntoMemory() {
 
     await client.set(IMPORT_COMPLETE_KEY, "1")
     console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
+
+    const embeddingFailures = getEmbeddingFailureCount()
+    if (embeddingFailures > 0) {
+      console.warn(
+        `WARNING: embeddings failed for ${embeddingFailures} chapter(s); semantic search will miss their verses. Re-run with --reimport once the cause is fixed.`,
+      )
+    }
   } finally {
     await client.quit()
   }
