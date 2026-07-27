@@ -14,8 +14,13 @@ export const getChapterController = async (req: Request, res: Response) => {
       return res.json(chapterData)
     }
   } catch (error) {
+    // getChapter signals a missing chapter with "Not Found"; anything else
+    // (e.g. Redis connectivity) is an operational failure, not a 404.
+    if (error instanceof Error && error.message === "Not Found") {
+      return res.status(404).json({ error: "Chapter not found" })
+    }
     console.error("Get chapter error:", error)
-    return res.status(404).json({ error: "Chapter not found" })
+    return res.status(500).json({ error: "Internal server error" })
   }
 
   res.status(404).json({ error: "Chapter not found" })

@@ -20,5 +20,18 @@ export const validateBooksParams = (
       .json({ error: `Unknown query parameters: ${unknown.join(", ")}` })
   }
 
+  // Also bound the values, so the cache key space stays limited to the
+  // recognized variants (absent, true, false).
+  const { withChapters } = req.query
+  if (
+    withChapters !== undefined &&
+    withChapters !== "true" &&
+    withChapters !== "false"
+  ) {
+    return res
+      .status(400)
+      .json({ error: 'withChapters must be "true" or "false"' })
+  }
+
   next()
 }

@@ -17,34 +17,39 @@ export const storeBook = async (usfmBook: USFMBook): Promise<void> => {
     client.on("error", (err) => console.error(`Redis client error: ${err}`))
     await client.connect()
 
-    const bookCount = await client.rPush("books", bookId)
+    try {
+      const bookCount = await client.rPush("books", bookId)
 
-    const bookName = getBookHeader(usfmBook, "toc1")
-    const bookShortName = getBookHeader(usfmBook, "toc2")
-    const bookAbrv = getBookHeader(usfmBook, "toc3")
+      const bookName = getBookHeader(usfmBook, "toc1")
+      const bookShortName = getBookHeader(usfmBook, "toc2")
+      const bookAbrv = getBookHeader(usfmBook, "toc3")
 
-    const introduction = extractBookIntro(usfmBook.headers)
+      const introduction = extractBookIntro(usfmBook.headers)
 
-    const book: Book = {
-      id: bookId,
-      name: bookName ?? "",
-      shortName: bookShortName ?? "",
-      abrv: bookAbrv ?? "",
-      chapterCount: Object.keys(usfmBook.chapters).length,
-      ...(introduction && { introduction }),
+      const book: Book = {
+        id: bookId,
+        name: bookName ?? "",
+        shortName: bookShortName ?? "",
+        abrv: bookAbrv ?? "",
+        chapterCount: Object.keys(usfmBook.chapters).length,
+        ...(introduction && { introduction }),
+      }
+
+      await client.json.set(`book:${bookId}`, "$", book)
+
+      for (const [number, chapter] of Object.entries(usfmBook.chapters)) {
+        await storeChapter(
+          client,
+          bookId,
+          bookCount,
+          Number.parseInt(number, 10),
+          chapter,
+        )
+      }
+    } finally {
+      // storeChapter can throw (e.g. repeated embedding failures aborting the
+      // import), so the connection must be closed on every path.
+      await client.quit()
     }
-
-    await client.json.set(`book:${bookId}`, "$", book)
-
-    for (const [number, chapter] of Object.entries(usfmBook.chapters)) {
-      await storeChapter(
-        client,
-        bookId,
-        bookCount,
-        Number.parseInt(number, 10),
-        chapter,
-      )
-    }
-    await client.quit()
   }
 }
