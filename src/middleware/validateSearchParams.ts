@@ -76,5 +76,13 @@ export const validateSearchParams = (
     limit: limitNumber,
   }
 
+  // Canonical values for the cache key, so equivalent spellings
+  // (untrimmed text, defaults omitted vs explicit) share one cache entry
+  res.locals.cacheKeyParams = {
+    text: trimmedText,
+    page: String(pageNumber),
+    limit: String(limitNumber),
+  }
+
   next()
 }

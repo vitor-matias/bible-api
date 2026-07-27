@@ -50,8 +50,12 @@ const setEndpoints = (
   app.get("/v1/:book", cacheResponse([], ["withVerses"]), getBookController)
 
   // Final error handler: never leak stack traces to clients
-  const errorHandler: express.ErrorRequestHandler = (err, _req, res, _next) => {
+  const errorHandler: express.ErrorRequestHandler = (err, _req, res, next) => {
     console.error("Unhandled request error:", err)
+    if (res.headersSent) {
+      // The response is already streaming; let Express abort the connection
+      return next(err)
+    }
     res.status(500).json({ error: "Internal server error" })
   }
   app.use(errorHandler)

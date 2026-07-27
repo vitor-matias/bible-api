@@ -13,15 +13,22 @@ const CACHE_TTL_SECONDS = 86400
  * cannot collide with other parameter combinations. `flagParams` are
  * booleans: they enter the key only as `name=true` when the value is
  * exactly "true", so arbitrary flag values all share the "off" key.
+ *
+ * When a validation middleware has stored canonical values in
+ * res.locals.cacheKeyParams, those take precedence over req.query, so
+ * equivalent spellings (e.g. " foo " vs "foo", or defaults omitted vs
+ * explicit) share one cache entry.
  */
 export const cacheResponse =
   (valueParams: string[] = [], flagParams: string[] = []) =>
   async (req: Request, res: Response, next: NextFunction) => {
     const { client } = res.locals
 
+    const canonical: Record<string, string> = res.locals.cacheKeyParams ?? {}
+
     const pairs: string[] = []
     for (const name of valueParams) {
-      const value = req.query[name]
+      const value = canonical[name] ?? req.query[name]
       if (typeof value === "string" && value !== "") {
         pairs.push(`${encodeURIComponent(name)}=${encodeURIComponent(value)}`)
       }
