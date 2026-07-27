@@ -31,10 +31,7 @@ const parseTableRow = (content: string): string[] => {
  * Converts a single USFMHeader into an IntroElement and pushes it
  * onto the target array. Handles table row grouping.
  */
-const pushElement = (
-  elements: IntroElement[],
-  header: USFMHeader,
-): void => {
+const pushElement = (elements: IntroElement[], header: USFMHeader): void => {
   const content = header.content ?? ""
 
   switch (header.tag) {
@@ -74,7 +71,7 @@ const pushElement = (
       const row = parseTableRow(content)
       const lastElement = elements[elements.length - 1]
       // Group consecutive tr rows into a single IntroTable
-      if (lastElement && lastElement.type === "introTable") {
+      if (lastElement?.type === "introTable") {
         lastElement.rows.push(row)
       } else {
         elements.push({ type: "introTable", rows: [row] })
@@ -127,9 +124,10 @@ export const extractBookIntro = (
   }
 
   if (sidebarContent !== null) {
-    console.warn("bookIntroUtils: unclosed \\esb sidebar block — content discarded")
+    console.warn(
+      String.raw`bookIntroUtils: unclosed \esb sidebar block — content discarded`,
+    )
   }
 
   return elements.length > 0 ? elements : undefined
 }
-

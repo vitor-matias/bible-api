@@ -88,8 +88,10 @@ export const storeVerse = async (
       const footnoteParts = text.split(/\\fp\s*/)
       for (const part of footnoteParts) {
         // Extract \fr ... \ft ... from each part
-        const frMatch = part.match(/\\fr\s+([^\\]+?)\s*\\ft/)
-        const ftMatch = part.match(/\\ft\s+([^\\]+?)(?=(\\fr|\\f\*|$))/)
+        // Captures are greedy with no overlapping quantifiers (linear time);
+        // surrounding whitespace is stripped by the .trim() calls below.
+        const frMatch = part.match(/\\fr\s([^\\]+)\\ft/)
+        const ftMatch = part.match(/\\ft\s([^\\]+)(?=\\fr|\\f\*|$)/)
         if (frMatch && ftMatch) {
           const footnoteReference = frMatch[1].trim()
           const footnoteText = ftMatch[1].trim()
@@ -118,7 +120,11 @@ export const storeVerse = async (
 export const extractVerseText = (verseData: Verse): string => {
   return verseData.text
     .filter(
-      (t) => t.type === "text" || t.type === "quote" || t.type === "paragraph" || t.type === "section",
+      (t) =>
+        t.type === "text" ||
+        t.type === "quote" ||
+        t.type === "paragraph" ||
+        t.type === "section",
     )
     .map((t) => t.text.trim())
     .join(" ")
