@@ -19,8 +19,12 @@ export const flushDatabase = async (
   for (const index of INDEXES) {
     try {
       await client.ft.dropIndex(index)
-    } catch {
-      // Index does not exist yet
+    } catch (error) {
+      // Only "index does not exist yet" is expected; surface anything else
+      const message = error instanceof Error ? error.message : String(error)
+      if (!/unknown index name/i.test(message)) {
+        throw error
+      }
     }
   }
 

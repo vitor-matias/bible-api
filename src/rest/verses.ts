@@ -12,7 +12,7 @@ export const getVerseController = async (req: Request, res: Response) => {
   const chapterNumber = parseRouteNumber(chapter)
   const verseNumber = parseRouteNumber(verse)
 
-  if (chapterNumber === null || verseNumber === null) {
+  if (chapterNumber === null || chapterNumber < 1 || verseNumber === null) {
     return res.status(400).json({ error: "Chapter and verse must be numbers" })
   }
 
@@ -32,7 +32,12 @@ export const getVersesController = async (req: Request, res: Response) => {
   const start = parseRouteNumber(startVerse)
   const end = parseRouteNumber(endVerse)
 
-  if (chapterNumber === null || start === null || end === null) {
+  if (
+    chapterNumber === null ||
+    chapterNumber < 1 ||
+    start === null ||
+    end === null
+  ) {
     return res.status(400).json({ error: "Chapter and verses must be numbers" })
   }
 
