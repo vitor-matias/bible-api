@@ -17,6 +17,16 @@ export const semanticSearchVerses = async (
 ): Promise<VersePage> => {
   const offset = (page - 1) * pageSize
 
+  // Short-circuit for pages that are beyond the maximum result window
+  if (offset >= KNN_MAX_RESULTS) {
+    return {
+      verses: [],
+      total: 0,
+      currentPage: page,
+      totalPages: Math.ceil(KNN_MAX_RESULTS / pageSize),
+    }
+  }
+
   const queryEmbedding = await generateEmbedding(search)
   const embeddingBuffer = Buffer.from(new Float32Array(queryEmbedding).buffer)
 
