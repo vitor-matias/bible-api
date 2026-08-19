@@ -1,6 +1,7 @@
 import type { Request, Response } from "express"
 import { getChapter } from "../services/chapter/getChapter"
 import { NotFoundError } from "../util/errors"
+import { parseNumericParam } from "../util/parseParams"
 
 export const getChapterController = async (req: Request, res: Response) => {
   const { book, chapter } = req.params
@@ -9,7 +10,7 @@ export const getChapterController = async (req: Request, res: Response) => {
     const chapterData = await getChapter(
       client,
       book,
-      Number.parseInt(chapter, 10),
+      parseNumericParam(chapter),
     )
     if (chapterData) {
       return res.json(chapterData)

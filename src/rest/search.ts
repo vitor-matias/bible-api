@@ -1,6 +1,7 @@
 import type { Request, Response } from "express"
 import { searchVerses } from "../services/search/searchVerses"
 import { semanticSearchVerses } from "../services/search/semanticSearch"
+import { isSemanticSearchAvailable } from "../util/importState"
 import { normalizeText } from "../util/normalizeText"
 
 export const searchVersesController = async (req: Request, res: Response) => {
@@ -18,6 +19,15 @@ export const searchVersesController = async (req: Request, res: Response) => {
   const limitNumber = Number.parseInt(limit as string, 10)
 
   if (semantic === "true") {
+    // Some chapters failed to embed, so the vector index covers only part of
+    // the corpus. Answering anyway would look like a complete result set.
+    if (!isSemanticSearchAvailable()) {
+      return res.status(503).json({
+        error:
+          "Semantic search is unavailable: the embedding index is incomplete",
+      })
+    }
+
     try {
       const result = await semanticSearchVerses(
         client,

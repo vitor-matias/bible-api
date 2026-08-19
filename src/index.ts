@@ -7,6 +7,11 @@ import { readBook } from "./services/usfmImportService/readBook"
 import { storeBook } from "./services/usfmImportService/storeBook"
 import { getEmbeddingFailureCount } from "./services/usfmImportService/storeChapter"
 import { flushDatabase } from "./util/flushDatabase"
+import {
+  getImportState,
+  isDataAvailable,
+  setImportState,
+} from "./util/importState"
 
 require("dotenv").config()
 
@@ -20,22 +25,23 @@ const app = express()
 app.disable("x-powered-by")
 const port = process.env.PORT || "3000"
 
-type ImportState = "loading" | "ready" | "failed"
-let importState: ImportState = "loading"
-
 // Always available, so an orchestrator can tell "still importing" from "dead"
-// instead of seeing a closed port for the whole import.
+// instead of seeing a closed port for the whole import. "degraded" still
+// serves: the primary data is complete, only some embeddings are missing.
 app.get("/health", (_req, res) => {
-  res.status(importState === "ready" ? 200 : 503).json({ status: importState })
+  res.status(isDataAvailable() ? 200 : 503).json({ status: getImportState() })
 })
 
 // Refuse data requests until the import finishes, so partially loaded data is
 // never served.
 app.use((_req, res, next) => {
-  if (importState !== "ready") {
+  if (!isDataAvailable()) {
     return res
       .status(503)
-      .json({ error: "Bible data is not available yet", status: importState })
+      .json({
+        error: "Bible data is not available yet",
+        status: getImportState(),
+      })
   }
   next()
 })
@@ -50,10 +56,13 @@ app.listen(port, () => {
 
 loadFilesIntoMemory()
   .then(() => {
-    importState = "ready"
+    // Chapters whose embeddings failed are absent from the vector index, so
+    // semantic search would silently answer from a partial corpus. Serve the
+    // primary data, but mark the process degraded and refuse semantic search.
+    setImportState(getEmbeddingFailureCount() > 0 ? "degraded" : "ready")
   })
   .catch((error) => {
-    importState = "failed"
+    setImportState("failed")
     console.error("Fatal startup error:", error)
   })
 
