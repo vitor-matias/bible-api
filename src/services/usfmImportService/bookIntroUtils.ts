@@ -85,7 +85,7 @@ const pushElement = (
 
     case "tr": {
       const row = parseTableRow(content)
-      const lastElement = elements[elements.length - 1]
+      const lastElement = elements.at(-1)
       // Group consecutive tr rows into a single IntroTable
       if (lastElement?.type === "introTable") {
         lastElement.rows.push(row)
@@ -94,6 +94,33 @@ const pushElement = (
       }
       break
     }
+  }
+}
+
+type TaggedHeader = {
+  header: USFMHeader
+  tag: IntroTag
+}
+
+/** Keeps only the headers that carry introduction content, with their parsed tag. */
+const collectIntroHeaders = (headers: USFMHeader[]): TaggedHeader[] => {
+  const introHeaders: TaggedHeader[] = []
+
+  for (const header of headers) {
+    const tag = parseIntroTag(header.tag)
+    if (tag) introHeaders.push({ header, tag })
+  }
+
+  return introHeaders
+}
+
+/** Closes an open \esb block, pushing it as a single element when it has content. */
+const closeSidebar = (
+  elements: IntroElement[],
+  sidebarContent: IntroElement[] | null,
+): void => {
+  if (sidebarContent && sidebarContent.length > 0) {
+    elements.push({ type: "introSidebar", content: sidebarContent })
   }
 }
 
@@ -109,11 +136,7 @@ const pushElement = (
 export const extractBookIntro = (
   headers: USFMHeader[],
 ): IntroElement[] | undefined => {
-  const introHeaders: { header: USFMHeader; tag: IntroTag }[] = []
-  for (const header of headers) {
-    const tag = parseIntroTag(header.tag)
-    if (tag) introHeaders.push({ header, tag })
-  }
+  const introHeaders = collectIntroHeaders(headers)
 
   if (introHeaders.length === 0) return undefined
 
@@ -124,23 +147,14 @@ export const extractBookIntro = (
     if (tag.base === "esb") {
       // Start collecting sidebar content
       sidebarContent = []
-      continue
-    }
-
-    if (tag.base === "esbe") {
-      // Close sidebar and push it as a single element
-      if (sidebarContent && sidebarContent.length > 0) {
-        elements.push({ type: "introSidebar", content: sidebarContent })
-      }
+    } else if (tag.base === "esbe") {
+      closeSidebar(elements, sidebarContent)
       sidebarContent = null
-      continue
+    } else if (header.content) {
+      // Push into sidebar or top-level depending on context; headers with no
+      // content carry nothing to represent.
+      pushElement(sidebarContent ?? elements, tag, header.content)
     }
-
-    // Skip headers with no content (except structural tags handled above)
-    if (!header.content) continue
-
-    // Push into sidebar or top-level depending on context
-    pushElement(sidebarContent ?? elements, tag, header.content)
   }
 
   if (sidebarContent !== null) {
