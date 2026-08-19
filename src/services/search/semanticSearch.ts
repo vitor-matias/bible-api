@@ -30,18 +30,19 @@ export const semanticSearchVerses = async (
   const queryEmbedding = await generateEmbedding(search)
   const embeddingBuffer = Buffer.from(new Float32Array(queryEmbedding).buffer)
 
-  const requestedSize = Math.min(KNN_MAX_RESULTS, offset + pageSize)
-
+  // Always ask for the full window: a KNN query returns at most K documents, so
+  // sizing K to the requested page would make `total` (and therefore
+  // `totalPages`) shrink to that page and hide the rest of the results.
   const results = (await client.ft.search(
     "idx:verseEmbeddings",
-    `*=>[KNN ${requestedSize} @embedding $vec AS score]`,
+    `*=>[KNN ${KNN_MAX_RESULTS} @embedding $vec AS score]`,
     {
       PARAMS: {
         vec: embeddingBuffer,
       },
       LIMIT: {
         from: 0,
-        size: requestedSize,
+        size: KNN_MAX_RESULTS,
       },
       SORTBY: {
         BY: "score",
@@ -69,13 +70,18 @@ export const semanticSearchVerses = async (
     (doc) => (doc.value as unknown as EmbeddingDocument).key,
   )
 
-  const versesData = await Promise.all(
-    verseKeys.map((key) => client.json.get(key)),
-  )
-
-  const verses: Verse[] = versesData
-    .filter((data) => data !== null)
-    .map((data) => data as Verse)
+  const verses: Verse[] = []
+  if (verseKeys.length > 0) {
+    // One round trip for the whole page. With the "$" path each entry comes
+    // back as a single-element array (or null for missing keys).
+    const versesData = await client.json.mGet(verseKeys, "$")
+    for (const doc of versesData) {
+      const verse = (doc as unknown as Verse[] | null)?.[0]
+      if (verse) {
+        verses.push(verse)
+      }
+    }
+  }
 
   return {
     verses,

@@ -36,9 +36,9 @@ export const searchRateLimit = (
   return searchRateLimiter(req, res, next)
 }
 
-// Strict limiter for the full-Bible materialization on /v1/books?withChapters=true,
-// which fetches every verse of every book on a cache miss.
-export const booksWithChaptersRateLimiter = rateLimit({
+// Strict limiter for the full-book materializations, which fetch every verse of
+// every requested chapter on a cache miss.
+export const fullBookRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // 10 requests per minute
   message: {
@@ -48,15 +48,16 @@ export const booksWithChaptersRateLimiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 })
 
-// Rate-limits only the expensive withChapters variant of the books listing;
-// the plain listing is cheap and cached.
-export const booksRateLimit = (
+// Rate-limits the variants that fan out to getBook(..., true) — withChapters on
+// the books listing and withVerses on a single book. Both read every verse of
+// every chapter they touch; the plain listings are cheap and cached.
+export const fullBookRateLimit = (
   req: Request,
   res: Response,
   next: NextFunction,
 ) => {
-  if (req.query.withChapters === "true") {
-    return booksWithChaptersRateLimiter(req, res, next)
+  if (req.query.withChapters === "true" || req.query.withVerses === "true") {
+    return fullBookRateLimiter(req, res, next)
   }
   return next()
 }

@@ -1,8 +1,9 @@
 import type express from "express"
 import { createClient } from "redis"
 import { checkCache } from "../middleware/checkCache"
-import { booksRateLimit, searchRateLimit } from "../middleware/rateLimiter"
+import { fullBookRateLimit, searchRateLimit } from "../middleware/rateLimiter"
 import { validateBooksParams } from "../middleware/validateBooksParams"
+import { validateQueryParams } from "../middleware/validateQueryParams"
 import { validateSearchParams } from "../middleware/validateSearchParams"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
@@ -42,11 +43,25 @@ export default (app: express.Express): void => {
     }
   })
 
-  // Endpoint to get a specific verse
-  app.get("/v1/:book/:chapter/:verse", checkCache, getVerseController)
+  // The cached routes below key on the full originalUrl, so every route that
+  // reaches checkCache validates its query parameters first — otherwise
+  // arbitrary junk params mint unbounded cache entries.
+  const noQueryParams = validateQueryParams([])
 
   // Endpoint to get a specific verse
-  app.get("/v1/:book/:chapter/:startVerse/:endVerse", getVersesController)
+  app.get(
+    "/v1/:book/:chapter/:verse",
+    noQueryParams,
+    checkCache,
+    getVerseController,
+  )
+
+  // Endpoint to get a specific verse
+  app.get(
+    "/v1/:book/:chapter/:startVerse/:endVerse",
+    noQueryParams,
+    getVersesController,
+  )
 
   app.get(
     "/v1/search",
@@ -57,13 +72,19 @@ export default (app: express.Express): void => {
   )
   app.get(
     "/v1/books",
-    booksRateLimit,
+    fullBookRateLimit,
     validateBooksParams,
     checkCache,
     getBooksController,
   )
 
-  app.get("/v1/:book/:chapter", checkCache, getChapterController)
+  app.get("/v1/:book/:chapter", noQueryParams, checkCache, getChapterController)
 
-  app.get("/v1/:book", checkCache, getBookController)
+  app.get(
+    "/v1/:book",
+    fullBookRateLimit,
+    validateQueryParams(["withVerses"]),
+    checkCache,
+    getBookController,
+  )
 }

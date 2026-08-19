@@ -42,10 +42,16 @@ export const generateEmbeddings = async (
       input: validTexts.map((v) => v.text),
     })
 
+    // Map by the index the API reports rather than by array position, so a
+    // reordered or unexpectedly sized response can't pair verses with the
+    // wrong vector.
     const result: number[][] = texts.map(() => [])
-    response.data.forEach((embedding, i) => {
-      result[validTexts[i].index] = embedding.embedding
-    })
+    for (const item of response.data) {
+      const source = validTexts[item.index]
+      if (source) {
+        result[source.index] = item.embedding
+      }
+    }
 
     return result
   } catch (error) {

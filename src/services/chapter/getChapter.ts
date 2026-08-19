@@ -1,30 +1,37 @@
 import type { createClient } from "redis"
 import { NotFoundError } from "../../util/errors"
-
-// Book ids come from USFM id headers (e.g. "gen", "1co"); restrict to
-// alphanumerics so they can't inject glob metacharacters into the SCAN pattern.
-const BOOK_ID_PATTERN = /^[a-z0-9]+$/
+import { getBookChapterTitle } from "./getBookChapterTitle"
+import { chapterVerseMaxKey } from "./verseCountKey"
 
 export const getChapter = async (
   client: ReturnType<typeof createClient>,
   bookId: Book["id"],
   chapterNumber: Chapter["number"],
 ): Promise<Chapter> => {
-  if (!BOOK_ID_PATTERN.test(bookId) || !Number.isInteger(chapterNumber)) {
+  if (!Number.isInteger(chapterNumber)) {
     throw new NotFoundError()
   }
 
-  // SCAN is non-blocking, unlike KEYS which scans the whole keyspace at once.
+  // The import records the chapter's highest verse number, so the verse keys
+  // can be addressed directly. Scanning for them instead walked the entire
+  // keyspace once per chapter, which /v1/books?withChapters=true multiplies by
+  // every chapter of every book.
+  const maxVerseNumber = await client.get(
+    chapterVerseMaxKey(bookId, chapterNumber),
+  )
+
+  const highestVerse =
+    maxVerseNumber === null ? Number.NaN : Number.parseInt(maxVerseNumber, 10)
+
+  if (!Number.isInteger(highestVerse) || highestVerse < 0) {
+    throw new NotFoundError()
+  }
+
+  // Verses are numbered from 0 (the "front" pseudo-verse) up to the recorded
+  // maximum; json.mGet returns null for any gap, which is filtered out below.
   const versesToFetch: string[] = []
-  for await (const keys of client.scanIterator({
-    MATCH: `verse:${bookId}:${chapterNumber}:*`,
-    COUNT: 100,
-  })) {
-    versesToFetch.push(...keys)
-  }
-
-  if (versesToFetch.length === 0) {
-    throw new NotFoundError()
+  for (let number = 0; number <= highestVerse; number++) {
+    versesToFetch.push(`verse:${bookId}:${chapterNumber}:${number}`)
   }
 
   // One round trip for the whole chapter. With the "$" path each entry comes
@@ -38,11 +45,13 @@ export const getChapter = async (
     }
   }
 
+  if (verses.length === 0) {
+    throw new NotFoundError()
+  }
+
   verses.sort((a, b) => a.number - b.number)
 
-  const chapterTitle = await client.get(
-    `chapterTitle:${bookId}:${chapterNumber}`,
-  )
+  const { title } = await getBookChapterTitle(client, bookId, chapterNumber)
 
-  return { bookId, number: chapterNumber, verses, title: chapterTitle || "" }
+  return { bookId, number: chapterNumber, verses, title }
 }

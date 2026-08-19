@@ -1,13 +1,13 @@
 /**
- * USFM tags that represent book introduction content.
- * These appear in the headers array parsed by usfm-js.
+ * Base USFM tags (without their level suffix) that represent book introduction
+ * content. usfm-js reports the numbered forms it finds in the file — `\imt1`,
+ * `\is1`, `\io2`, `\ili1` — so tags are matched on their base and the trailing
+ * digits are read as the level.
  */
-const INTRO_TAGS = new Set([
+const INTRO_TAG_BASES = new Set([
   "imt",
-  "imt2",
   "ip",
   "is",
-  "is2",
   "io",
   "tr",
   "ili",
@@ -16,13 +16,35 @@ const INTRO_TAGS = new Set([
   "esbe",
 ])
 
+type IntroTag = {
+  base: string
+  level: 1 | 2
+}
+
+/**
+ * Splits a header tag into its intro base tag and level (`"is2"` -> is/2),
+ * or returns null when the tag is not introduction content. Levels beyond 2
+ * are clamped, since the API exposes only two heading levels.
+ */
+const parseIntroTag = (tag: string): IntroTag | null => {
+  const match = /^([a-z]+)(\d*)$/.exec(tag)
+
+  if (!match || !INTRO_TAG_BASES.has(match[1])) return null
+
+  const level = match[2] ? Number.parseInt(match[2], 10) : 1
+
+  return { base: match[1], level: level >= 2 ? 2 : 1 }
+}
+
 /**
  * Parses a table row content string like "\\th1 Key: \\th2 Value"
  * into an array of cell values: ["Key:", "Value"]
+ *
+ * Rows may use header cells (\th, \thr) or regular cells (\tc, \tcr).
  */
 const parseTableRow = (content: string): string[] => {
   return content
-    .split(/\\th\d+\s*/)
+    .split(/\\t(?:hr|cr|h|c)\d+\s*/)
     .filter((cell) => cell.trim().length > 0)
     .map((cell) => cell.trim())
 }
@@ -31,16 +53,14 @@ const parseTableRow = (content: string): string[] => {
  * Converts a single USFMHeader into an IntroElement and pushes it
  * onto the target array. Handles table row grouping.
  */
-const pushElement = (elements: IntroElement[], header: USFMHeader): void => {
-  const content = header.content ?? ""
-
-  switch (header.tag) {
+const pushElement = (
+  elements: IntroElement[],
+  { base, level }: IntroTag,
+  content: string,
+): void => {
+  switch (base) {
     case "imt":
-      elements.push({ type: "introTitle", level: 1, text: content })
-      break
-
-    case "imt2":
-      elements.push({ type: "introTitle", level: 2, text: content })
+      elements.push({ type: "introTitle", level, text: content })
       break
 
     case "ip":
@@ -48,11 +68,7 @@ const pushElement = (elements: IntroElement[], header: USFMHeader): void => {
       break
 
     case "is":
-      elements.push({ type: "introSection", level: 1, text: content })
-      break
-
-    case "is2":
-      elements.push({ type: "introSection", level: 2, text: content })
+      elements.push({ type: "introSection", level, text: content })
       break
 
     case "io":
@@ -93,21 +109,25 @@ const pushElement = (elements: IntroElement[], header: USFMHeader): void => {
 export const extractBookIntro = (
   headers: USFMHeader[],
 ): IntroElement[] | undefined => {
-  const introHeaders = headers.filter((h) => INTRO_TAGS.has(h.tag))
+  const introHeaders: { header: USFMHeader; tag: IntroTag }[] = []
+  for (const header of headers) {
+    const tag = parseIntroTag(header.tag)
+    if (tag) introHeaders.push({ header, tag })
+  }
 
   if (introHeaders.length === 0) return undefined
 
   const elements: IntroElement[] = []
   let sidebarContent: IntroElement[] | null = null
 
-  for (const header of introHeaders) {
-    if (header.tag === "esb") {
+  for (const { header, tag } of introHeaders) {
+    if (tag.base === "esb") {
       // Start collecting sidebar content
       sidebarContent = []
       continue
     }
 
-    if (header.tag === "esbe") {
+    if (tag.base === "esbe") {
       // Close sidebar and push it as a single element
       if (sidebarContent && sidebarContent.length > 0) {
         elements.push({ type: "introSidebar", content: sidebarContent })
@@ -120,7 +140,7 @@ export const extractBookIntro = (
     if (!header.content) continue
 
     // Push into sidebar or top-level depending on context
-    pushElement(sidebarContent ?? elements, header)
+    pushElement(sidebarContent ?? elements, tag, header.content)
   }
 
   if (sidebarContent !== null) {

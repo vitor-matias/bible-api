@@ -1,37 +1,5 @@
-import type express from "express"
+import { validateQueryParams } from "./validateQueryParams"
 
-const ALLOWED_PARAMS = new Set(["withChapters"])
-
-// Rejects unrecognized query parameters on /v1/books. Since checkCache keys on
-// the full originalUrl, this bounds the cache key space to the recognized
-// variants and stops junk-param cache busting.
-export const validateBooksParams = (
-  req: express.Request,
-  res: express.Response,
-  next: express.NextFunction,
-) => {
-  const unknown = Object.keys(req.query).filter(
-    (param) => !ALLOWED_PARAMS.has(param),
-  )
-
-  if (unknown.length > 0) {
-    return res
-      .status(400)
-      .json({ error: `Unknown query parameters: ${unknown.join(", ")}` })
-  }
-
-  // Also bound the values, so the cache key space stays limited to the
-  // recognized variants (absent, true, false).
-  const { withChapters } = req.query
-  if (
-    withChapters !== undefined &&
-    withChapters !== "true" &&
-    withChapters !== "false"
-  ) {
-    return res
-      .status(400)
-      .json({ error: 'withChapters must be "true" or "false"' })
-  }
-
-  next()
-}
+// Rejects unrecognized query parameters on /v1/books and bounds withChapters to
+// the recognized variants (absent, true, false).
+export const validateBooksParams = validateQueryParams(["withChapters"])

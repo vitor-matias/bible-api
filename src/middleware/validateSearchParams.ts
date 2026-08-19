@@ -25,8 +25,10 @@ export const validateSearchParams = (
       .json({ error: "Search text is too long (maximum 200 characters)" })
   }
 
-  // Replace raw text with trimmed value so downstream receives cleaned input
-  req.query.text = trimmedText
+  // In Express 5 req.query is a getter that re-parses on every access, so
+  // mutating it here would be discarded. Hand the cleaned value to the
+  // controller on res.locals instead.
+  res.locals.searchText = trimmedText
 
   // Validate page parameter if provided
   if (page !== undefined) {

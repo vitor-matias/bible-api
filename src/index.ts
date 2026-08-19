@@ -10,29 +10,52 @@ import { flushDatabase } from "./util/flushDatabase"
 
 require("dotenv").config()
 
+// Written only after a full import finishes, so a crash mid-import leaves the
+// marker absent and the next start reimports instead of serving partial data.
+// The suffix is part of the storage format: bump it when the layout changes so
+// existing databases reimport instead of being read with the wrong assumptions.
+const IMPORT_COMPLETE_KEY = "importComplete:v2"
+
 const app = express()
 app.disable("x-powered-by")
 const port = process.env.PORT || "3000"
 
-;(async () => {
-  try {
-    await loadFilesIntoMemory()
+type ImportState = "loading" | "ready" | "failed"
+let importState: ImportState = "loading"
 
-    setEndpoints(app)
+// Always available, so an orchestrator can tell "still importing" from "dead"
+// instead of seeing a closed port for the whole import.
+app.get("/health", (_req, res) => {
+  res.status(importState === "ready" ? 200 : 503).json({ status: importState })
+})
 
-    // Start the server
-    app.listen(port, () => {
-      console.info(`Server is up and running at http://localhost:${port}`)
-    })
-  } catch (error) {
-    console.error("Fatal startup error:", error)
-    process.exit(1)
+// Refuse data requests until the import finishes, so partially loaded data is
+// never served.
+app.use((_req, res, next) => {
+  if (importState !== "ready") {
+    return res
+      .status(503)
+      .json({ error: "Bible data is not available yet", status: importState })
   }
-})()
+  next()
+})
 
-// Written only after a full import finishes, so a crash mid-import leaves the
-// marker absent and the next start reimports instead of serving partial data.
-const IMPORT_COMPLETE_KEY = "importComplete"
+setEndpoints(app)
+
+// Listen before the import runs: it can take many minutes, and a closed port
+// makes health checks fail and the container restart from scratch.
+app.listen(port, () => {
+  console.info(`Server is up and running at http://localhost:${port}`)
+})
+
+loadFilesIntoMemory()
+  .then(() => {
+    importState = "ready"
+  })
+  .catch((error) => {
+    importState = "failed"
+    console.error("Fatal startup error:", error)
+  })
 
 // Loads the Bible data into Redis. Skips re-importing (and the destructive
 // flush + costly embedding regeneration) when data is already present, unless
@@ -75,15 +98,18 @@ async function loadFilesIntoMemory() {
       )
     }
 
-    await client.set(IMPORT_COMPLETE_KEY, "1")
-    console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
-
     const embeddingFailures = getEmbeddingFailureCount()
     if (embeddingFailures > 0) {
+      // Leaving the marker unwritten keeps the next start from silently serving
+      // a corpus whose semantic index is permanently missing these chapters.
       console.warn(
-        `WARNING: embeddings failed for ${embeddingFailures} chapter(s); semantic search will miss their verses. Re-run with --reimport once the cause is fixed.`,
+        `WARNING: embeddings failed for ${embeddingFailures} chapter(s); semantic search would miss their verses, so the import is not marked complete and the next start will reimport.`,
       )
+    } else {
+      await client.set(IMPORT_COMPLETE_KEY, "1")
     }
+
+    console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
   } finally {
     await client.quit()
   }

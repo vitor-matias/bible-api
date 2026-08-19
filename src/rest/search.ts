@@ -8,6 +8,11 @@ export const searchVersesController = async (req: Request, res: Response) => {
 
   const { text, page = "1", limit = "10", semantic } = req.query
 
+  // validateSearchParams puts the trimmed text on res.locals; req.query still
+  // holds the raw value because Express 5 rebuilds it on every access.
+  const searchText =
+    (res.locals.searchText as string | undefined) ?? (text as string)
+
   // Parse parameters (validation already done in middleware)
   const pageNumber = Number.parseInt(page as string, 10)
   const limitNumber = Number.parseInt(limit as string, 10)
@@ -16,7 +21,7 @@ export const searchVersesController = async (req: Request, res: Response) => {
     try {
       const result = await semanticSearchVerses(
         client,
-        text as string,
+        searchText,
         pageNumber,
         limitNumber,
       )
@@ -30,7 +35,7 @@ export const searchVersesController = async (req: Request, res: Response) => {
       res.json(
         await searchVerses(
           client,
-          normalizeText(text as string),
+          normalizeText(searchText),
           pageNumber,
           limitNumber,
         ),
