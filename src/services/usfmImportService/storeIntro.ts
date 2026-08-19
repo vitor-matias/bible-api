@@ -16,17 +16,28 @@ export const isPeripheralBookId = (bookId: string): boolean =>
 
 // "00_Intro_Pentateuco.usfm" -> "pentateuco". The id header cannot be used
 // because every one of these files declares the same code.
+// Splitting on runs of non-slug characters drops leading and trailing
+// separators without a trimming pass, which would need an unanchored
+// quantifier and backtrack super-linearly on long inputs.
+const slugify = (value: string): string =>
+  normalizeText(value)
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .join("-")
+
 export const introSlugFromFileName = (fileName: string): string => {
   const base = fileName.replace(/\.usfm$/i, "")
   const withoutPrefix = base
     .replace(/^\d+[_-]*/, "")
     .replace(/^intro[_-]*/i, "")
 
-  const slug = normalizeText(withoutPrefix || base)
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-
-  return slug || normalizeText(base).replace(/[^a-z0-9]+/g, "-")
+  // A name with no slug-able characters at all (e.g. only underscores, or a
+  // non-Latin script) still needs an addressable, stable key.
+  return (
+    slugify(withoutPrefix) ||
+    slugify(base) ||
+    Buffer.from(base, "utf8").toString("hex")
+  )
 }
 
 export const storeIntro = async (
