@@ -36,12 +36,10 @@ app.get("/health", (_req, res) => {
 // never served.
 app.use((_req, res, next) => {
   if (!isDataAvailable()) {
-    return res
-      .status(503)
-      .json({
-        error: "Bible data is not available yet",
-        status: getImportState(),
-      })
+    return res.status(503).json({
+      error: "Bible data is not available yet",
+      status: getImportState(),
+    })
   }
   next()
 })
@@ -102,7 +100,7 @@ async function loadFilesIntoMemory() {
         chunk.map(async (file) => {
           console.log(file)
           const bibleData = await readBook(path.join(filePath, file))
-          await storeBook(bibleData)
+          await storeBook(bibleData, file)
         }),
       )
     }

@@ -8,6 +8,7 @@ import { validateSearchParams } from "../middleware/validateSearchParams"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
+import { getIntroController, getIntrosController } from "./intros"
 import { searchVersesController } from "./search"
 import { getVerseController, getVersesController } from "./verses"
 
@@ -77,6 +78,11 @@ export default (app: express.Express): void => {
     checkCache,
     getBooksController,
   )
+
+  // Registered before the ":book" patterns of the same shape, which would
+  // otherwise swallow these paths.
+  app.get("/v1/intros", noQueryParams, checkCache, getIntrosController)
+  app.get("/v1/intros/:slug", noQueryParams, checkCache, getIntroController)
 
   app.get("/v1/:book/:chapter", noQueryParams, checkCache, getChapterController)
 

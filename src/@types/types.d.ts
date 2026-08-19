@@ -107,6 +107,17 @@ type IntroMajorSection = {
   text: string
 }
 
+// Front-matter introductions (USFM \id FRT / INT). Stored outside the book
+// namespace because every such file shares one id, and outside every search
+// index because introductions are not search content.
+type BookIntro = {
+  slug: string
+  name: string
+  introduction: IntroElement[]
+}
+
+type IntroSummary = Pick<BookIntro, "slug" | "name">
+
 type Chapter = {
   bookId: Book["id"]
   number: number
