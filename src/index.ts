@@ -1,6 +1,8 @@
 import * as fs from "node:fs"
 import * as path from "node:path"
+import cors from "cors"
 import express from "express"
+import helmet from "helmet"
 import { createClient } from "redis"
 import setEndpoints from "./rest"
 import { readBook } from "./services/usfmImportService/readBook"
@@ -24,6 +26,38 @@ const IMPORT_COMPLETE_KEY = "importComplete:v2"
 const app = express()
 app.disable("x-powered-by")
 const port = process.env.PORT || "3000"
+
+// Set TRUST_PROXY when running behind a reverse proxy — "true", a hop
+// count (e.g. "1"), or a proxy-addr value ("loopback", an IP, a CIDR) —
+// otherwise rate limiting keys on the proxy address instead of the client.
+// Invalid values make Express throw at startup, which is the desired
+// fail-fast behavior.
+const trustProxy = process.env.TRUST_PROXY
+if (trustProxy) {
+  if (trustProxy === "true") {
+    app.set("trust proxy", true)
+  } else if (!Number.isNaN(Number(trustProxy))) {
+    app.set("trust proxy", Number(trustProxy))
+  } else {
+    app.set("trust proxy", trustProxy)
+  }
+}
+
+app.use(helmet())
+
+// Public read-only API: allow any origin unless CORS_ORIGIN restricts it
+// (comma-separated list of allowed origins)
+const corsOrigin = process.env.CORS_ORIGIN
+app.use(
+  cors({
+    origin: corsOrigin
+      ? corsOrigin
+          .split(",")
+          .map((origin) => origin.trim())
+          .filter((origin) => origin !== "")
+      : "*",
+  }),
+)
 
 // Always available, so an orchestrator can tell "still importing" from "dead"
 // instead of seeing a closed port for the whole import. "degraded" still

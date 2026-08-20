@@ -2,6 +2,8 @@ import type { Request, Response } from "express"
 import { getVerse } from "../services/verse/getVerse"
 import { parseNumericParam } from "../util/parseParams"
 
+const MAX_VERSE_RANGE = 200
+
 export const getVerseController = async (req: Request, res: Response) => {
   const { book, chapter, verse } = req.params
 
@@ -32,23 +34,30 @@ export const getVersesController = async (req: Request, res: Response) => {
 
   // NaN fails every comparison, so malformed parameters fall through to 404.
   if (!Number.isNaN(chapterNumber) && firstVerse <= lastVerse) {
-    let currentVerse = firstVerse
-
-    const verseData = []
-
-    while (currentVerse <= lastVerse) {
-      const data = await getVerse(client, book, chapterNumber, currentVerse)
-
-      if (!data) {
-        break
-      }
-
-      verseData.push(data)
-
-      currentVerse++
+    // No chapter has more verses than this; larger ranges are client error
+    if (lastVerse - firstVerse + 1 > MAX_VERSE_RANGE) {
+      return res.status(400).json({
+        error: `Verse range must be at most ${MAX_VERSE_RANGE} verses`,
+      })
     }
 
-    if (verseData) {
+    // One pipelined round trip instead of a serial fetch per verse
+    const results = await Promise.all(
+      Array.from({ length: lastVerse - firstVerse + 1 }, (_, i) =>
+        getVerse(client, book, chapterNumber, firstVerse + i),
+      ),
+    )
+
+    // Keep only the leading run of existing verses, as before
+    const verseData: Verse[] = []
+    for (const verse of results) {
+      if (!verse) {
+        break
+      }
+      verseData.push(verse)
+    }
+
+    if (verseData.length > 0) {
       return res.json(verseData)
     }
   }

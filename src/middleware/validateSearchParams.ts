@@ -38,6 +38,14 @@ export const validateSearchParams = (
         .status(400)
         .json({ error: "Page parameter must be a positive integer" })
     }
+
+    // Bounds the RediSearch offset (page * limit); huge offsets error out
+    // server-side and would surface as 500s instead of a clear 400
+    if (pageNumber > 10000) {
+      return res
+        .status(400)
+        .json({ error: "Page parameter cannot exceed 10000" })
+    }
   }
 
   // Validate limit parameter if provided

@@ -1,9 +1,6 @@
 {
     "compilerOptions": {
-      "target": "ES6",
-      // Node 18+ runtime: type against a modern standard library even though
-      // the emitted syntax stays ES6.
-      "lib": ["ES2022"],
+      "target": "ES2022",
       "module": "commonjs",
       "strict": true,
       "esModuleInterop": true,
