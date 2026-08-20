@@ -16,14 +16,14 @@ export const parseTrustProxy = (
     const hops = Number(value)
 
     if (!Number.isSafeInteger(hops)) {
-      throw new Error(`TRUST_PROXY hop count is too large: "${rawValue}"`)
+      throw new TypeError(`TRUST_PROXY hop count is too large: "${rawValue}"`)
     }
 
     return hops
   }
 
   if (!Number.isNaN(Number(value))) {
-    throw new Error(
+    throw new TypeError(
       `TRUST_PROXY must be "true", "false", a non-negative integer hop count, or a proxy-addr value; got "${rawValue}"`,
     )
   }
