@@ -2,30 +2,14 @@ import type { NextFunction, Request, Response } from "express"
 
 const CACHE_PREFIX = "cache:"
 const CACHE_TTL_SECONDS = 86400
-// /v1/books?withChapters=true serialises to ~20 MB. Storing that as one
-// RedisJSON value blocks the Redis event loop on write and crowds out the
-// primary data, which has no TTL and so cannot be evicted to make room.
-const MAX_CACHEABLE_BYTES = 1024 * 1024
 
-type CachedResponse = {
-  status: number
-  body: unknown
-}
-
-// Serialising here duplicates work express does when sending, but it is the
-// only way to know the size before handing a multi-megabyte value to Redis.
-const isCacheable = (body: unknown): boolean => {
-  const serialized = JSON.stringify(body)
-
-  if (serialized === undefined) return false
-
-  if (Buffer.byteLength(serialized) > MAX_CACHEABLE_BYTES) {
-    console.log("Response too large to cache")
-    return false
-  }
-
-  return true
-}
+// Entries are stored as plain strings rather than RedisJSON. Nothing ever reads
+// a path inside a cached response, so RedisJSON only added cost: it parses the
+// body into a tree that occupies several times the raw bytes and blocks the
+// server while it is built. A ceiling still guards against a pathological
+// response, but it is deliberately far above the largest real one — the
+// full-Bible listing is ~20 MB and is precisely the response worth caching.
+const MAX_CACHEABLE_BYTES = 64 * 1024 * 1024
 
 export const checkCache = async (
   req: Request,
@@ -38,10 +22,12 @@ export const checkCache = async (
   const cacheKey = `${CACHE_PREFIX}${req.originalUrl}`
 
   try {
-    const cached = (await client.json.get(cacheKey)) as CachedResponse | null
+    const cached = await client.get(cacheKey)
     if (cached != null) {
       console.log("Cache hit")
-      return res.status(cached.status).json(cached.body)
+      // Replay the stored JSON verbatim. Parsing it back into an object just to
+      // have res.json re-serialize it would be two extra passes over the body.
+      return res.type("application/json").send(cached)
     }
 
     console.log("Cache miss")
@@ -51,18 +37,24 @@ export const checkCache = async (
 
     // Override the json function to cache successful responses only.
     res.json = (body) => {
-      if (res.statusCode === 200 && isCacheable(body)) {
-        const payload: CachedResponse = { status: res.statusCode, body }
-        // Set + expire run in one MULTI so a key can never be left without a
-        // TTL (volatile-lru only evicts keys that have one).
-        client
-          .multi()
-          .json.set(cacheKey, "$", payload)
-          .expire(cacheKey, CACHE_TTL_SECONDS)
-          .exec()
-          .catch((err: Error) => {
-            console.error(`Error setting cache: ${err}`)
-          })
+      // Only 200s are cached, so the status never needs storing alongside.
+      if (res.statusCode === 200) {
+        const payload = JSON.stringify(body)
+
+        if (
+          payload !== undefined &&
+          Buffer.byteLength(payload) <= MAX_CACHEABLE_BYTES
+        ) {
+          // SET carries its own expiry, so a key can never be left without a
+          // TTL (volatile-lru only evicts keys that have one).
+          client
+            .set(cacheKey, payload, { EX: CACHE_TTL_SECONDS })
+            .catch((err: Error) => {
+              console.error(`Error setting cache: ${err}`)
+            })
+        } else {
+          console.warn("Response too large to cache")
+        }
       }
       return originalJson(body)
     }
