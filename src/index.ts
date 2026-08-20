@@ -37,12 +37,21 @@ if (trustProxy) {
   app.set("trust proxy", parseTrustProxy(trustProxy))
 }
 
-// helmet's defaults target HTML apps: they set an HTML CSP and
-// Cross-Origin-Resource-Policy: same-origin, which contradicts the open CORS
-// policy below and refuses no-cors consumers of a public read-only JSON API.
+// helmet's defaults target HTML apps: they set a CSP built around 'self'
+// script/style/img sources and Cross-Origin-Resource-Policy: same-origin, which
+// contradicts the open CORS policy below and refuses no-cors consumers of a
+// public read-only JSON API. This API serves no markup and loads no
+// subresources, so the strictest possible policy applies instead of the
+// HTML-shaped default.
 app.use(
   helmet({
-    contentSecurityPolicy: false,
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        "default-src": ["'none'"],
+        "frame-ancestors": ["'none'"],
+      },
+    },
     crossOriginResourcePolicy: { policy: "cross-origin" },
   }),
 )
