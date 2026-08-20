@@ -1,8 +1,11 @@
+version: "3.8"
 services:
   redis:
     image: redis/redis-stack:latest
     environment:
-      REDIS_ARGS: "--maxmemory 1gb --maxmemory-policy volatile-lru"
+      # volatile-lru only evicts keys with a TTL (the namespaced cache entries),
+      # so primary Bible data (which has no TTL) is never evicted under pressure.
+      REDIS_ARGS: "--maxmemory ${REDIS_MAX_MEMORY:-1gb} --maxmemory-policy volatile-lru"
     ports:
       - "127.0.0.1:6379:6379"  # Bind to localhost only
     healthcheck:
@@ -13,4 +16,3 @@ services:
 
 volumes:
   redis_data:
-  

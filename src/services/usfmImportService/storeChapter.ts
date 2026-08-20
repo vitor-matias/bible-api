@@ -1,6 +1,38 @@
 import type { createClient } from "redis"
+import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { generateEmbeddings } from "../openai/embeddings"
 import { extractVerseText, storeVerse } from "./storeVerse"
+
+// Repeated failures indicate a systemic problem (bad OPENAI_API_KEY, outage)
+// rather than a transient one, so the import aborts instead of silently
+// producing a corpus without embeddings.
+const MAX_CONSECUTIVE_EMBEDDING_FAILURES = 3
+let consecutiveEmbeddingFailures = 0
+let embeddingFailureCount = 0
+
+// Chapters whose embeddings failed transiently during this import; semantic
+// search misses their verses until a reimport.
+export const getEmbeddingFailureCount = () => embeddingFailureCount
+
+type VerseForEmbedding = {
+  verseData: Verse
+  text: string
+}
+
+// Single definition of what qualifies for the semantic index: real verses
+// (verse 0 is the "front" pseudo-verse) that carry some text.
+const collectForEmbedding = (
+  versesData: VerseForEmbedding[],
+  verseData: Verse,
+  verseNumber: number,
+): void => {
+  if (verseNumber <= 0) return
+
+  const text = extractVerseText(verseData)
+  if (text.trim().length > 0) {
+    versesData.push({ verseData, text })
+  }
+}
 
 const compareVerseLabels = (
   a: [string, USFMVerse],
@@ -27,18 +59,15 @@ export const storeChapter = async (
   chapter: USFMChapter,
 ): Promise<void> => {
   let verseNumber = 1
-  const versesData: {
-    verseData: Verse
-    text: string
-  }[] = []
+  const versesData: VerseForEmbedding[] = []
 
   // Tracks an empty quote (like \q1) that appears at the end of a verse, so it can
   // be applied to the beginning of the next verse.
   let pendingQuote: USFMVerseObject | null = null
 
-  for (const [verseLabel, verse] of Object.entries(chapter).sort(
-    compareVerseLabels,
-  )) {
+  const verseEntries = Object.entries(chapter).sort(compareVerseLabels)
+
+  for (const [index, [verseLabel, verse]] of verseEntries.entries()) {
     // If the previous verse ended with an empty quote block, apply its tag
     // to the first object of the current verse if it's plain text.
     // USFM authors sometimes place a quote tag (e.g. \q1) before a verse marker (\v)
@@ -53,7 +82,10 @@ export const storeChapter = async (
     // Check if the current verse ends with an empty quote block.
     // If so, remove it from this verse and save it as pending
     // so it can be applied to the beginning of the next verse instead.
-    if (verse.verseObjects.length > 0) {
+    // The last verse keeps its trailing quote: there is no next verse to move
+    // it to, and stashing it there would drop it entirely.
+    const hasNextVerse = index < verseEntries.length - 1
+    if (hasNextVerse && verse.verseObjects.length > 0) {
       const lastObj = verse.verseObjects[verse.verseObjects.length - 1]
       if (
         lastObj.type === "quote" &&
@@ -81,12 +113,7 @@ export const storeChapter = async (
               labelForVerse,
               objectsForVerse,
             )
-            if (verseNumber > 0) {
-              const text = extractVerseText(verseData)
-              if (text.trim().length > 0) {
-                versesData.push({ verseData, text })
-              }
-            }
+            collectForEmbedding(versesData, verseData, verseNumber)
             objectsForVerse = []
 
             verseNumber++
@@ -107,12 +134,7 @@ export const storeChapter = async (
           labelForVerse,
           objectsForVerse,
         )
-        if (verseNumber > 0) {
-          const text = extractVerseText(verseData)
-          if (text.trim().length > 0) {
-            versesData.push({ verseData, text })
-          }
-        }
+        collectForEmbedding(versesData, verseData, verseNumber)
         verseNumber++
       }
     } else if (verseLabel !== "front") {
@@ -125,12 +147,7 @@ export const storeChapter = async (
         verseLabel,
         verse.verseObjects,
       )
-      if (verseNumber > 0) {
-        const text = extractVerseText(verseData)
-        if (text.trim().length > 0) {
-          versesData.push({ verseData, text })
-        }
-      }
+      collectForEmbedding(versesData, verseData, verseNumber)
       verseNumber++
     } else {
       await storeVerse(
@@ -156,14 +173,12 @@ export const storeChapter = async (
     )
   }
 
-  // Chapter metadata lets readers fetch verses directly by number
-  // instead of scanning the keyspace
-  const meta: ChapterMeta = {
-    bookId: bookCode,
-    number: chapterNumber,
-    lastVerse: verseNumber - 1,
-  }
-  await client.json.set(`chapter:${bookCode}:${chapterNumber}`, "$", meta)
+  // Record the chapter's highest verse number so getChapter can address the
+  // verse keys directly instead of scanning the keyspace for them.
+  await client.set(
+    chapterVerseMaxKey(bookCode, chapterNumber),
+    String(Math.max(0, verseNumber - 1)),
+  )
 
   // Generate embeddings in batch for all verses in the chapter
   if (versesData.length > 0) {
@@ -175,11 +190,12 @@ export const storeChapter = async (
     try {
       const embeddings = await generateEmbeddings(texts)
 
-      // Store all embeddings
+      // Store all embeddings in one pipelined round trip
+      const multi = client.multi()
       for (let i = 0; i < versesData.length; i++) {
         const v = versesData[i].verseData
         if (embeddings[i] && embeddings[i].length > 0) {
-          await client.json.set(
+          multi.json.set(
             `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
             "$",
             {
@@ -189,11 +205,22 @@ export const storeChapter = async (
           )
         }
       }
+      await multi.exec()
+      consecutiveEmbeddingFailures = 0
     } catch (error) {
+      embeddingFailureCount++
+      consecutiveEmbeddingFailures++
       console.error(
         `Failed to generate embeddings for chapter ${chapterNumber}:`,
         error,
       )
+      // A missing/invalid API key or an OpenAI outage would otherwise fail
+      // every chapter one by one, leaving the whole corpus without embeddings.
+      if (consecutiveEmbeddingFailures >= MAX_CONSECUTIVE_EMBEDDING_FAILURES) {
+        throw new Error(
+          `Embedding generation failed for ${consecutiveEmbeddingFailures} chapters in a row — aborting import. Last error: ${error}`,
+        )
+      }
     }
   }
 }

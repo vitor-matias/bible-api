@@ -1,87 +1,67 @@
-import type { NextFunction, Request, Response } from "express"
-import { sanitizeSearchQuery } from "../util/sanitizeSearchQuery"
+import type express from "express"
 
-const MAX_TEXT_LENGTH = 200
-const MAX_PAGE = 10000
-const MAX_LIMIT = 50
-
-const isPositiveInteger = (value: unknown): value is string =>
-  typeof value === "string" && /^\d+$/.test(value)
-
-/**
- * Validates and sanitizes search query parameters, storing the parsed
- * values in res.locals.searchParams for the controller.
- *
- * `text` is the trimmed raw query (used for semantic search, where it is
- * sent to the embeddings API, not into a query string); `sanitizedText`
- * additionally strips RediSearch syntax for the keyword search.
- */
+// Middleware to validate search query parameters
 export const validateSearchParams = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
+  req: express.Request,
+  res: express.Response,
+  next: express.NextFunction,
 ) => {
-  const { text, page = "1", limit = "10" } = req.query
+  const { text, page, limit } = req.query
 
-  if (typeof text !== "string" || text.trim() === "") {
-    return res.status(400).json({ error: 'Query parameter "text" is required' })
+  // Validate text parameter
+  if (!text || typeof text !== "string") {
+    return res.status(400).json({ error: "Text parameter is required" })
   }
 
   const trimmedText = text.trim()
 
-  if (trimmedText.length > MAX_TEXT_LENGTH) {
-    return res.status(400).json({
-      error: `Query parameter "text" must be at most ${MAX_TEXT_LENGTH} characters`,
-    })
+  if (!trimmedText) {
+    return res.status(400).json({ error: "Text parameter cannot be blank" })
   }
 
-  const sanitizedText = sanitizeSearchQuery(trimmedText)
-  if (sanitizedText === "") {
-    return res.status(400).json({
-      error: 'Query parameter "text" contains no searchable characters',
-    })
-  }
-
-  if (!isPositiveInteger(page) || Number.parseInt(page, 10) < 1) {
+  if (trimmedText.length > 200) {
     return res
       .status(400)
-      .json({ error: 'Query parameter "page" must be a positive integer' })
+      .json({ error: "Search text is too long (maximum 200 characters)" })
   }
 
-  if (!isPositiveInteger(limit) || Number.parseInt(limit, 10) < 1) {
-    return res
-      .status(400)
-      .json({ error: 'Query parameter "limit" must be a positive integer' })
+  // In Express 5 req.query is a getter that re-parses on every access, so
+  // mutating it here would be discarded. Hand the cleaned value to the
+  // controller on res.locals instead.
+  res.locals.searchText = trimmedText
+
+  // Validate page parameter if provided
+  if (page !== undefined) {
+    const pageNumber = Number.parseInt(page as string, 10)
+    if (Number.isNaN(pageNumber) || pageNumber < 1) {
+      return res
+        .status(400)
+        .json({ error: "Page parameter must be a positive integer" })
+    }
+
+    // Bounds the RediSearch offset (page * limit); huge offsets error out
+    // server-side and would surface as 500s instead of a clear 400
+    if (pageNumber > 10000) {
+      return res
+        .status(400)
+        .json({ error: "Page parameter cannot exceed 10000" })
+    }
   }
 
-  const pageNumber = Number.parseInt(page, 10)
-  const limitNumber = Number.parseInt(limit, 10)
+  // Validate limit parameter if provided
+  if (limit !== undefined) {
+    const limitNumber = Number.parseInt(limit as string, 10)
+    if (Number.isNaN(limitNumber) || limitNumber < 1) {
+      return res
+        .status(400)
+        .json({ error: "Limit parameter must be a positive integer" })
+    }
 
-  if (pageNumber > MAX_PAGE) {
-    return res
-      .status(400)
-      .json({ error: `Query parameter "page" must be at most ${MAX_PAGE}` })
-  }
-
-  if (limitNumber > MAX_LIMIT) {
-    return res
-      .status(400)
-      .json({ error: `Query parameter "limit" must be at most ${MAX_LIMIT}` })
-  }
-
-  res.locals.searchParams = {
-    text: trimmedText,
-    sanitizedText,
-    page: pageNumber,
-    limit: limitNumber,
-  }
-
-  // Canonical values for the cache key, so equivalent spellings
-  // (untrimmed text, defaults omitted vs explicit) share one cache entry
-  res.locals.cacheKeyParams = {
-    text: trimmedText,
-    page: String(pageNumber),
-    limit: String(limitNumber),
+    if (limitNumber > 100) {
+      return res
+        .status(400)
+        .json({ error: "Limit parameter cannot exceed 100" })
+    }
   }
 
   next()

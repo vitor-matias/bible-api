@@ -88,8 +88,10 @@ export const storeVerse = async (
       const footnoteParts = text.split(/\\fp\s*/)
       for (const part of footnoteParts) {
         // Extract \fr ... \ft ... from each part
-        const frMatch = part.match(/\\fr\s+([^\\]+?)\s*\\ft/)
-        const ftMatch = part.match(/\\ft\s+([^\\]+?)(?=(\\fr|\\f\*|$))/)
+        // Captures are greedy with no overlapping quantifiers (linear time);
+        // surrounding whitespace is stripped by the .trim() calls below.
+        const frMatch = /\\fr\s([^\\]+)\\ft/.exec(part)
+        const ftMatch = /\\ft\s([^\\]+)(?=\\fr|\\f\*|$)/.exec(part)
         if (frMatch && ftMatch) {
           const footnoteReference = frMatch[1].trim()
           const footnoteText = ftMatch[1].trim()
@@ -113,10 +115,7 @@ export const storeVerse = async (
 
 /**
  * Extracts the plain text content from a verse for embedding generation.
- * Only includes text, quote, and paragraph types, filtering out other content like sections and footnotes.
- *
- * @param verseData - The verse data object containing text elements
- * @returns The extracted text joined by spaces, or empty string if no text content
+ * Includes text, quote, paragraph, and section types; excludes footnotes and references.
  */
 export const extractVerseText = (verseData: Verse): string => {
   return verseData.text

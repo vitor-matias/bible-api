@@ -1,19 +1,28 @@
 import type { Request, Response } from "express"
 import { getChapter } from "../services/chapter/getChapter"
-import { parseRouteNumber } from "../util/parseRouteNumber"
+import { NotFoundError } from "../util/errors"
+import { parseNumericParam } from "../util/parseParams"
 
 export const getChapterController = async (req: Request, res: Response) => {
   const { book, chapter } = req.params
   const { client } = res.locals
-
-  const chapterNumber = parseRouteNumber(chapter)
-  if (chapterNumber === null || chapterNumber < 1) {
-    return res.status(400).json({ error: "Chapter must be a positive number" })
-  }
-
-  const chapterData = await getChapter(client, book, chapterNumber)
-  if (chapterData) {
-    return res.json(chapterData)
+  try {
+    const chapterData = await getChapter(
+      client,
+      book,
+      parseNumericParam(chapter),
+    )
+    if (chapterData) {
+      return res.json(chapterData)
+    }
+  } catch (error) {
+    // getChapter signals a missing chapter with NotFoundError; anything else
+    // (e.g. Redis connectivity) is an operational failure, not a 404.
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({ error: "Chapter not found" })
+    }
+    console.error("Get chapter error:", error)
+    return res.status(500).json({ error: "Internal server error" })
   }
 
   res.status(404).json({ error: "Chapter not found" })

@@ -1,37 +1,57 @@
 import type { createClient } from "redis"
+import { NotFoundError } from "../../util/errors"
+import { getBookChapterTitle } from "./getBookChapterTitle"
+import { chapterVerseMaxKey } from "./verseCountKey"
 
 export const getChapter = async (
   client: ReturnType<typeof createClient>,
   bookId: Book["id"],
   chapterNumber: Chapter["number"],
-): Promise<Chapter | null> => {
-  const meta = (await client.json.get(
-    `chapter:${bookId}:${chapterNumber}`,
-  )) as ChapterMeta | null
-
-  if (!meta) {
-    return null
+): Promise<Chapter> => {
+  if (!Number.isInteger(chapterNumber)) {
+    throw new NotFoundError()
   }
 
-  // Verse numbers are sequential (0 = front matter), so fetch them directly
-  // instead of discovering keys with a blocking KEYS scan
-  const results = await Promise.all(
-    Array.from({ length: meta.lastVerse + 1 }, (_, verseNumber) =>
-      client.json.get(`verse:${bookId}:${chapterNumber}:${verseNumber}`),
-    ),
+  // The import records the chapter's highest verse number, so the verse keys
+  // can be addressed directly. Scanning for them instead walked the entire
+  // keyspace once per chapter, which /v1/books?withChapters=true multiplies by
+  // every chapter of every book.
+  const maxVerseNumber = await client.get(
+    chapterVerseMaxKey(bookId, chapterNumber),
   )
 
+  const highestVerse =
+    maxVerseNumber === null ? Number.NaN : Number.parseInt(maxVerseNumber, 10)
+
+  if (!Number.isInteger(highestVerse) || highestVerse < 0) {
+    throw new NotFoundError()
+  }
+
+  // Verses are numbered from 0 (the "front" pseudo-verse) up to the recorded
+  // maximum; json.mGet returns null for any gap, which is filtered out below.
+  const versesToFetch: string[] = []
+  for (let number = 0; number <= highestVerse; number++) {
+    versesToFetch.push(`verse:${bookId}:${chapterNumber}:${number}`)
+  }
+
+  // One round trip for the whole chapter. With the "$" path each entry comes
+  // back as a single-element array (or null for missing keys).
+  const versesData = await client.json.mGet(versesToFetch, "$")
   const verses: Verse[] = []
-  for (const result of results) {
-    if (result) {
-      const verse = result as unknown as Verse
-      verses[verse.number] = verse
+  for (const doc of versesData) {
+    const verse = (doc as unknown as Verse[] | null)?.[0]
+    if (verse) {
+      verses.push(verse)
     }
   }
 
-  const chapterTitle = await client.get(
-    `chapterTitle:${bookId}:${chapterNumber}`,
-  )
+  if (verses.length === 0) {
+    throw new NotFoundError()
+  }
 
-  return { bookId, number: chapterNumber, verses, title: chapterTitle || "" }
+  verses.sort((a, b) => a.number - b.number)
+
+  const { title } = await getBookChapterTitle(client, bookId, chapterNumber)
+
+  return { bookId, number: chapterNumber, verses, title }
 }

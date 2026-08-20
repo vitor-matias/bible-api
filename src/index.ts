@@ -1,4 +1,3 @@
-import "dotenv/config"
 import * as fs from "node:fs"
 import * as path from "node:path"
 import cors from "cors"
@@ -8,10 +7,25 @@ import { createClient } from "redis"
 import setEndpoints from "./rest"
 import { readBook } from "./services/usfmImportService/readBook"
 import { storeBook } from "./services/usfmImportService/storeBook"
+import { getEmbeddingFailureCount } from "./services/usfmImportService/storeChapter"
 import { flushDatabase } from "./util/flushDatabase"
+import {
+  getImportState,
+  isDataAvailable,
+  setImportState,
+} from "./util/importState"
+
+require("dotenv").config()
+
+// Written only after a full import finishes, so a crash mid-import leaves the
+// marker absent and the next start reimports instead of serving partial data.
+// The suffix is part of the storage format: bump it when the layout changes so
+// existing databases reimport instead of being read with the wrong assumptions.
+const IMPORT_COMPLETE_KEY = "importComplete:v2"
 
 const app = express()
-const port = Number.parseInt(process.env.PORT ?? "", 10) || 3000
+app.disable("x-powered-by")
+const port = process.env.PORT || "3000"
 
 // Set TRUST_PROXY when running behind a reverse proxy — "true", a hop
 // count (e.g. "1"), or a proxy-addr value ("loopback", an IP, a CIDR) —
@@ -45,52 +59,99 @@ app.use(
   }),
 )
 
-const client = createClient({ url: process.env.DB_URL })
-client.on("error", (error) => {
-  console.error("Redis client error:", error)
+// Always available, so an orchestrator can tell "still importing" from "dead"
+// instead of seeing a closed port for the whole import. "degraded" still
+// serves: the primary data is complete, only some embeddings are missing.
+app.get("/health", (_req, res) => {
+  res.status(isDataAvailable() ? 200 : 503).json({ status: getImportState() })
 })
 
-async function main() {
-  await client.connect()
+// Refuse data requests until the import finishes, so partially loaded data is
+// never served.
+app.use((_req, res, next) => {
+  if (!isDataAvailable()) {
+    return res.status(503).json({
+      error: "Bible data is not available yet",
+      status: getImportState(),
+    })
+  }
+  next()
+})
 
-  // Load data before accepting traffic so incomplete responses never get cached
-  await loadFilesIntoMemory()
+setEndpoints(app)
 
-  setEndpoints(app, client)
+// Listen before the import runs: it can take many minutes, and a closed port
+// makes health checks fail and the container restart from scratch.
+app.listen(port, () => {
+  console.info(`Server is up and running at http://localhost:${port}`)
+})
 
-  app.listen(port, () => {
-    console.info(`Server is up and running at http://localhost:${port}`)
+loadFilesIntoMemory()
+  .then(() => {
+    // Chapters whose embeddings failed are absent from the vector index, so
+    // semantic search would silently answer from a partial corpus. Serve the
+    // primary data, but mark the process degraded and refuse semantic search.
+    setImportState(getEmbeddingFailureCount() > 0 ? "degraded" : "ready")
   })
-}
+  .catch((error) => {
+    setImportState("failed")
+    console.error("Fatal startup error:", error)
+  })
 
-// Load the Bible data into the database
+// Loads the Bible data into Redis. Skips re-importing (and the destructive
+// flush + costly embedding regeneration) when data is already present, unless
+// the process is started with --reimport.
 async function loadFilesIntoMemory() {
   const start = Date.now()
+  const reimport = process.argv.includes("--reimport")
 
-  // Validate config and list the source files before the destructive
-  // flush, so a misconfiguration doesn't leave the database empty
-  const textsPath = process.env.PATH_TO_TEXTS
-  if (!textsPath) {
-    throw new Error("PATH_TO_TEXTS environment variable is not set")
+  const client = createClient({ url: process.env.DB_URL })
+  client.on("error", (err) => console.error(`Redis client error: ${err}`))
+  await client.connect()
+  try {
+    const alreadyLoaded = (await client.exists(IMPORT_COMPLETE_KEY)) === 1
+
+    if (alreadyLoaded && !reimport) {
+      console.info(
+        "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
+      )
+      return
+    }
+
+    // flushDatabase also clears any stale completion marker.
+    await flushDatabase()
+
+    const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
+    console.log(filePath)
+    const files = fs
+      .readdirSync(filePath)
+      .filter((file) => file.endsWith(".usfm"))
+
+    const chunkSize = 1
+    for (let i = 0; i < files.length; i += chunkSize) {
+      const chunk = files.slice(i, i + chunkSize)
+      await Promise.all(
+        chunk.map(async (file) => {
+          console.log(file)
+          const bibleData = await readBook(path.join(filePath, file))
+          await storeBook(bibleData, file)
+        }),
+      )
+    }
+
+    const embeddingFailures = getEmbeddingFailureCount()
+    if (embeddingFailures > 0) {
+      // Leaving the marker unwritten keeps the next start from silently serving
+      // a corpus whose semantic index is permanently missing these chapters.
+      console.warn(
+        `WARNING: embeddings failed for ${embeddingFailures} chapter(s); semantic search would miss their verses, so the import is not marked complete and the next start will reimport.`,
+      )
+    } else {
+      await client.set(IMPORT_COMPLETE_KEY, "1")
+    }
+
+    console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
+  } finally {
+    await client.quit()
   }
-
-  // Sorted so book order (and book numbers) stay deterministic
-  const files = fs
-    .readdirSync(textsPath)
-    .filter((file) => file.endsWith(".usfm"))
-    .sort()
-
-  await flushDatabase(client)
-
-  for (const file of files) {
-    const bibleData = await readBook(path.join(textsPath, file))
-    await storeBook(client, bibleData)
-  }
-
-  console.info(`load complete. took ${(Date.now() - start) / 1000}s`)
 }
-
-main().catch((error) => {
-  console.error("Fatal startup error:", error)
-  process.exit(1)
-})
