@@ -1,4 +1,5 @@
 import type express from "express"
+import { parseNumericParam } from "../util/parseParams"
 
 // Must match the defaults searchVersesController applies when the parameters
 // are absent, so the offset bound below reflects the query actually issued.
@@ -44,7 +45,8 @@ export const validateSearchParams = (
   // Limit is validated before page because the offset bound needs both.
   let limitNumber = DEFAULT_LIMIT
   if (limit !== undefined) {
-    limitNumber = Number.parseInt(limit as string, 10)
+    // parseInt would accept "10abc" as 10 and "2.5" as 2.
+    limitNumber = parseNumericParam(limit as string)
 
     if (Number.isNaN(limitNumber) || limitNumber < 1) {
       return res
@@ -61,7 +63,7 @@ export const validateSearchParams = (
 
   let pageNumber = DEFAULT_PAGE
   if (page !== undefined) {
-    pageNumber = Number.parseInt(page as string, 10)
+    pageNumber = parseNumericParam(page as string)
 
     if (Number.isNaN(pageNumber) || pageNumber < 1) {
       return res

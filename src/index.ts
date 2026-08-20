@@ -134,9 +134,13 @@ async function loadFilesIntoMemory() {
 
     const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
     console.log(filePath)
+    // readdirSync order is filesystem-dependent. Sorting keeps book numbering
+    // (which feeds searchId) and introduction slug suffixes identical across
+    // machines and reimports.
     const files = fs
       .readdirSync(filePath)
       .filter((file) => file.endsWith(".usfm"))
+      .sort()
 
     const chunkSize = 1
     for (let i = 0; i < files.length; i += chunkSize) {

@@ -2,7 +2,7 @@ import type { createClient } from "redis"
 import { NotFoundError } from "../../util/errors"
 import { verseKey } from "../verse/getVerse"
 import { getBookChapterTitle } from "./getBookChapterTitle"
-import { chapterVerseMaxKey } from "./verseCountKey"
+import { chapterVerseMaxKey, MAX_CHAPTER_VERSES } from "./verseCountKey"
 
 export const getChapter = async (
   client: ReturnType<typeof createClient>,
@@ -24,10 +24,17 @@ export const getChapter = async (
     chapterVerseMaxKey(bookId, chapterNumber),
   )
 
+  // parseInt would accept "2junk", and isInteger accepts unsafe integers, so a
+  // corrupt marker could drive the loop below to an absurd key count.
   const highestVerse =
-    maxVerseNumber === null ? Number.NaN : Number.parseInt(maxVerseNumber, 10)
+    maxVerseNumber !== null && /^\d+$/.test(maxVerseNumber)
+      ? Number(maxVerseNumber)
+      : Number.NaN
 
-  if (!Number.isInteger(highestVerse) || highestVerse < 0) {
+  if (
+    !Number.isSafeInteger(highestVerse) ||
+    highestVerse > MAX_CHAPTER_VERSES
+  ) {
     throw new NotFoundError()
   }
 
