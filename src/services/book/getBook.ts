@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { NotFoundError } from "../../util/errors"
 import { getBookChapterTitle } from "../chapter/getBookChapterTitle"
 import { getChapter } from "../chapter/getChapter"
 
@@ -17,11 +18,21 @@ export const getBook = async (
   )
 
   const chapters = await Promise.all(
-    chapterNumbers.map((chapterNumber) =>
-      getChapters
-        ? getChapter(client, bookId, chapterNumber)
-        : getBookChapterTitle(client, bookId, chapterNumber),
-    ),
+    chapterNumbers.map(async (chapterNumber) => {
+      if (!getChapters) {
+        return getBookChapterTitle(client, bookId, chapterNumber)
+      }
+
+      try {
+        return await getChapter(client, bookId, chapterNumber)
+      } catch (error) {
+        // A chapter that is simply absent is dropped by the filter below;
+        // Promise.all would otherwise reject and fail the whole book. Any
+        // other error is operational and must still surface.
+        if (error instanceof NotFoundError) return null
+        throw error
+      }
+    }),
   )
 
   book.chapters = chapters.filter(

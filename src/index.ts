@@ -14,6 +14,7 @@ import {
   isDataAvailable,
   setImportState,
 } from "./util/importState"
+import { parseTrustProxy } from "./util/trustProxy"
 
 require("dotenv").config()
 
@@ -30,17 +31,10 @@ const port = process.env.PORT || "3000"
 // Set TRUST_PROXY when running behind a reverse proxy — "true", a hop
 // count (e.g. "1"), or a proxy-addr value ("loopback", an IP, a CIDR) —
 // otherwise rate limiting keys on the proxy address instead of the client.
-// Invalid values make Express throw at startup, which is the desired
-// fail-fast behavior.
+// parseTrustProxy rejects values Express would misread; see its comment.
 const trustProxy = process.env.TRUST_PROXY
 if (trustProxy) {
-  if (trustProxy === "true") {
-    app.set("trust proxy", true)
-  } else if (!Number.isNaN(Number(trustProxy))) {
-    app.set("trust proxy", Number(trustProxy))
-  } else {
-    app.set("trust proxy", trustProxy)
-  }
+  app.set("trust proxy", parseTrustProxy(trustProxy))
 }
 
 app.use(helmet())

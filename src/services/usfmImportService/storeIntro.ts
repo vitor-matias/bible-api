@@ -48,15 +48,16 @@ export const storeIntro = async (
 ): Promise<void> => {
   const alreadyListed = await client.lPos(INTRO_LIST_KEY, slug)
 
-  if (alreadyListed === null) {
-    await client.rPush(INTRO_LIST_KEY, slug)
-  } else {
-    // Two source files reduced to the same slug; the second would silently
-    // replace the first, which is the failure this namespace exists to avoid.
-    console.warn(
-      `Duplicate introduction slug "${slug}" — overwriting the previously stored one.`,
+  if (alreadyListed !== null) {
+    // Two source files reduced to the same slug (e.g. "Intro_A-B.usfm" and
+    // "Intro_A_B.usfm"). Overwriting would lose one introduction silently,
+    // which is exactly the failure this namespace exists to prevent.
+    throw new Error(
+      `Duplicate introduction slug "${slug}" — two source files map to the same slug; rename one.`,
     )
   }
+
+  await client.rPush(INTRO_LIST_KEY, slug)
 
   await client.json.set(introKey(slug), "$", { slug, name, introduction })
 }
