@@ -7,7 +7,7 @@ type EmbeddingDocument = {
 }
 
 // KNN search is capped at this many results; results beyond this offset are unavailable.
-const KNN_MAX_RESULTS = 100
+export const KNN_MAX_RESULTS = 100
 
 export const semanticSearchVerses = async (
   client: ReturnType<typeof createClient>,
@@ -17,7 +17,9 @@ export const semanticSearchVerses = async (
 ): Promise<VersePage> => {
   const offset = (page - 1) * pageSize
 
-  // Short-circuit for pages that are beyond the maximum result window
+  // Defensive: the controller rejects out-of-window pages with a 400 so this
+  // ambiguous zeroed page is unreachable over HTTP, but a direct caller should
+  // still not pay for an embedding it cannot use.
   if (offset >= KNN_MAX_RESULTS) {
     return {
       verses: [],

@@ -1,6 +1,9 @@
 import type { Request, Response } from "express"
 import { searchVerses } from "../services/search/searchVerses"
-import { semanticSearchVerses } from "../services/search/semanticSearch"
+import {
+  KNN_MAX_RESULTS,
+  semanticSearchVerses,
+} from "../services/search/semanticSearch"
 import { isSemanticSearchAvailable } from "../util/importState"
 import { normalizeText } from "../util/normalizeText"
 
@@ -25,6 +28,14 @@ export const searchVersesController = async (req: Request, res: Response) => {
       return res.status(503).json({
         error:
           "Semantic search is unavailable: the embedding index is incomplete",
+      })
+    }
+
+    // Past the KNN window the service can only answer with zeroed totals,
+    // which reads as "no matches" rather than "beyond the search window".
+    if ((pageNumber - 1) * limitNumber >= KNN_MAX_RESULTS) {
+      return res.status(400).json({
+        error: `Semantic search returns at most ${KNN_MAX_RESULTS} results; the requested page is beyond that window`,
       })
     }
 

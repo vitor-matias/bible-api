@@ -1,15 +1,21 @@
 import type { Request, Response } from "express"
 import { getBook } from "../services/book/getBook"
+import { mapWithConcurrency } from "../util/concurrency"
 
-export const getBooksController = async (_req: Request, res: Response) => {
+// Books are read a few at a time; each one already fans out over its chapters,
+// so an unbounded Promise.all here multiplies the two.
+const BOOK_CONCURRENCY = 4
+
+export const getBooksController = async (req: Request, res: Response) => {
   const { client } = res.locals
-  const { withChapters } = _req.query as { withChapters?: string }
+  const { withChapters } = req.query as { withChapters?: string }
 
-  const bookList = await Promise.all(
-    (await client.lRange("books", 0, -1)).map(
-      async (bookId: string) =>
-        await getBook(client, bookId, withChapters === "true"),
-    ),
+  const bookIds: string[] = await client.lRange("books", 0, -1)
+
+  const bookList = await mapWithConcurrency(
+    bookIds,
+    BOOK_CONCURRENCY,
+    (bookId) => getBook(client, bookId, withChapters === "true"),
   )
 
   res.json(bookList)

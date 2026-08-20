@@ -37,21 +37,26 @@ if (trustProxy) {
   app.set("trust proxy", parseTrustProxy(trustProxy))
 }
 
-app.use(helmet())
+// helmet's defaults target HTML apps: they set an HTML CSP and
+// Cross-Origin-Resource-Policy: same-origin, which contradicts the open CORS
+// policy below and refuses no-cors consumers of a public read-only JSON API.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  }),
+)
 
 // Public read-only API: allow any origin unless CORS_ORIGIN restricts it
 // (comma-separated list of allowed origins)
-const corsOrigin = process.env.CORS_ORIGIN
-app.use(
-  cors({
-    origin: corsOrigin
-      ? corsOrigin
-          .split(",")
-          .map((origin) => origin.trim())
-          .filter((origin) => origin !== "")
-      : "*",
-  }),
-)
+const allowedOrigins = (process.env.CORS_ORIGIN ?? "")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter((origin) => origin !== "")
+
+// An empty list would tell cors to match no origin at all, so a stray comma in
+// CORS_ORIGIN would silently break every browser client. Treat it as unset.
+app.use(cors({ origin: allowedOrigins.length > 0 ? allowedOrigins : "*" }))
 
 // Always available, so an orchestrator can tell "still importing" from "dead"
 // instead of seeing a closed port for the whole import. "degraded" still
@@ -99,7 +104,10 @@ async function loadFilesIntoMemory() {
   const start = Date.now()
   const reimport = process.argv.includes("--reimport")
 
-  const client = createClient({ url: process.env.DB_URL })
+  const client = createClient({
+    url: process.env.DB_URL,
+    socket: { connectTimeout: 100000 },
+  })
   client.on("error", (err) => console.error(`Redis client error: ${err}`))
   await client.connect()
   try {
@@ -128,7 +136,7 @@ async function loadFilesIntoMemory() {
         chunk.map(async (file) => {
           console.log(file)
           const bibleData = await readBook(path.join(filePath, file))
-          await storeBook(bibleData, file)
+          await storeBook(client, bibleData, file)
         }),
       )
     }

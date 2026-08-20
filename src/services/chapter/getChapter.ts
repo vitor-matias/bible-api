@@ -1,5 +1,6 @@
 import type { createClient } from "redis"
 import { NotFoundError } from "../../util/errors"
+import { verseKey } from "../verse/getVerse"
 import { getBookChapterTitle } from "./getBookChapterTitle"
 import { chapterVerseMaxKey } from "./verseCountKey"
 
@@ -7,6 +8,9 @@ export const getChapter = async (
   client: ReturnType<typeof createClient>,
   bookId: Book["id"],
   chapterNumber: Chapter["number"],
+  // Bulk callers fetch every title for the book in one MGET and pass it in,
+  // which avoids a per-chapter round trip here.
+  knownTitle?: string,
 ): Promise<Chapter> => {
   if (!Number.isInteger(chapterNumber)) {
     throw new NotFoundError()
@@ -31,12 +35,21 @@ export const getChapter = async (
   // maximum; json.mGet returns null for any gap, which is filtered out below.
   const versesToFetch: string[] = []
   for (let number = 0; number <= highestVerse; number++) {
-    versesToFetch.push(`verse:${bookId}:${chapterNumber}:${number}`)
+    versesToFetch.push(verseKey(bookId, chapterNumber, number))
   }
 
-  // One round trip for the whole chapter. With the "$" path each entry comes
-  // back as a single-element array (or null for missing keys).
-  const versesData = await client.json.mGet(versesToFetch, "$")
+  // One round trip for the whole chapter, issued alongside the title lookup
+  // rather than before it. With the "$" path each entry comes back as a
+  // single-element array (or null for missing keys).
+  const [versesData, title] = await Promise.all([
+    client.json.mGet(versesToFetch, "$"),
+    knownTitle !== undefined
+      ? Promise.resolve(knownTitle)
+      : getBookChapterTitle(client, bookId, chapterNumber).then(
+          (chapter) => chapter.title ?? "",
+        ),
+  ])
+
   const verses: Verse[] = []
   for (const doc of versesData) {
     const verse = (doc as unknown as Verse[] | null)?.[0]
@@ -50,8 +63,6 @@ export const getChapter = async (
   }
 
   verses.sort((a, b) => a.number - b.number)
-
-  const { title } = await getBookChapterTitle(client, bookId, chapterNumber)
 
   return { bookId, number: chapterNumber, verses, title }
 }

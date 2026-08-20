@@ -2,10 +2,29 @@ import type { NextFunction, Request, Response } from "express"
 
 const CACHE_PREFIX = "cache:"
 const CACHE_TTL_SECONDS = 86400
+// /v1/books?withChapters=true serialises to ~20 MB. Storing that as one
+// RedisJSON value blocks the Redis event loop on write and crowds out the
+// primary data, which has no TTL and so cannot be evicted to make room.
+const MAX_CACHEABLE_BYTES = 1024 * 1024
 
 type CachedResponse = {
   status: number
   body: unknown
+}
+
+// Serialising here duplicates work express does when sending, but it is the
+// only way to know the size before handing a multi-megabyte value to Redis.
+const isCacheable = (body: unknown): boolean => {
+  const serialized = JSON.stringify(body)
+
+  if (serialized === undefined) return false
+
+  if (Buffer.byteLength(serialized) > MAX_CACHEABLE_BYTES) {
+    console.log("Response too large to cache")
+    return false
+  }
+
+  return true
 }
 
 export const checkCache = async (
@@ -32,7 +51,7 @@ export const checkCache = async (
 
     // Override the json function to cache successful responses only.
     res.json = (body) => {
-      if (res.statusCode === 200) {
+      if (res.statusCode === 200 && isCacheable(body)) {
         const payload: CachedResponse = { status: res.statusCode, body }
         // Set + expire run in one MULTI so a key can never be left without a
         // TTL (volatile-lru only evicts keys that have one).

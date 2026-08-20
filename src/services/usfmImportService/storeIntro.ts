@@ -40,24 +40,49 @@ export const introSlugFromFileName = (fileName: string): string => {
   )
 }
 
+// Bounds the disambiguation search; a slug repeating this often means the file
+// names are degenerate, not that one pair happens to collide.
+const MAX_SLUG_ATTEMPTS = 100
+
+// Two source files can reduce to the same slug ("Intro_A-B.usfm" and
+// "Intro_A_B.usfm"). Overwriting would silently lose one introduction, but
+// throwing would fail the whole import and leave the API in permanent 503 —
+// so the second one is suffixed and the collision is logged loudly.
+const availableSlug = async (
+  client: ReturnType<typeof createClient>,
+  slug: string,
+): Promise<string> => {
+  if ((await client.lPos(INTRO_LIST_KEY, slug)) === null) return slug
+
+  for (let attempt = 2; attempt <= MAX_SLUG_ATTEMPTS; attempt++) {
+    const candidate = `${slug}-${attempt}`
+
+    if ((await client.lPos(INTRO_LIST_KEY, candidate)) === null) {
+      console.error(
+        `Duplicate introduction slug "${slug}" — storing this one as "${candidate}". Rename the source file to get a stable URL.`,
+      )
+      return candidate
+    }
+  }
+
+  throw new Error(
+    `Introduction slug "${slug}" collides after ${MAX_SLUG_ATTEMPTS} attempts; rename the source files.`,
+  )
+}
+
 export const storeIntro = async (
   client: ReturnType<typeof createClient>,
   slug: string,
   name: string,
   introduction: IntroElement[],
 ): Promise<void> => {
-  const alreadyListed = await client.lPos(INTRO_LIST_KEY, slug)
+  const storedSlug = await availableSlug(client, slug)
 
-  if (alreadyListed !== null) {
-    // Two source files reduced to the same slug (e.g. "Intro_A-B.usfm" and
-    // "Intro_A_B.usfm"). Overwriting would lose one introduction silently,
-    // which is exactly the failure this namespace exists to prevent.
-    throw new Error(
-      `Duplicate introduction slug "${slug}" — two source files map to the same slug; rename one.`,
-    )
-  }
+  await client.rPush(INTRO_LIST_KEY, storedSlug)
 
-  await client.rPush(INTRO_LIST_KEY, slug)
-
-  await client.json.set(introKey(slug), "$", { slug, name, introduction })
+  await client.json.set(introKey(storedSlug), "$", {
+    slug: storedSlug,
+    name,
+    introduction,
+  })
 }

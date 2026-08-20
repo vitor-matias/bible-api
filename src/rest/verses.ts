@@ -1,5 +1,5 @@
 import type { Request, Response } from "express"
-import { getVerse } from "../services/verse/getVerse"
+import { getVerse, verseKey } from "../services/verse/getVerse"
 import { parseNumericParam } from "../util/parseParams"
 
 const MAX_VERSE_RANGE = 200
@@ -41,22 +41,26 @@ export const getVersesController = async (req: Request, res: Response) => {
       })
     }
 
-    // One pipelined round trip instead of a serial fetch per verse
-    const results = await Promise.all(
-      Array.from({ length: lastVerse - firstVerse + 1 }, (_, i) =>
-        getVerse(client, book, chapterNumber, firstVerse + i),
-      ),
+    // A single JSON.MGET for the whole span, so a range of absent verses costs
+    // one command rather than one per verse.
+    const keys = Array.from({ length: lastVerse - firstVerse + 1 }, (_, i) =>
+      verseKey(book, chapterNumber, firstVerse + i),
     )
+    const results = await client.json.mGet(keys, "$")
 
     // Keep only the leading run of existing verses, as before
     const verseData: Verse[] = []
-    for (const verse of results) {
+    for (const doc of results) {
+      const verse = (doc as unknown as Verse[] | null)?.[0]
       if (!verse) {
         break
       }
       verseData.push(verse)
     }
 
+    // A range whose first verse is missing returns 404, not an empty 200. The
+    // previous `if (verseData)` was always true (an empty array is truthy), so
+    // this endpoint used to answer 200 [] for a range that does not exist.
     if (verseData.length > 0) {
       return res.json(verseData)
     }

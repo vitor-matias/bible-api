@@ -57,24 +57,29 @@ export default (app: express.Express): void => {
     getVerseController,
   )
 
-  // Endpoint to get a specific verse
+  // Deliberately NOT cached: the cache keys on the full URL, and start/end are
+  // free-form, so every (start, end) pair of every chapter would mint its own
+  // entry — tens of millions of keys against the bound the validators exist to
+  // keep. The range is served from one JSON.MGET instead.
   app.get(
     "/v1/:book/:chapter/:startVerse/:endVerse",
     noQueryParams,
     getVersesController,
   )
 
+  // Validators run before the limiters: a request the validator will reject
+  // must not consume the strict per-minute budget reserved for real work.
   app.get(
     "/v1/search",
-    searchRateLimit,
     validateSearchParams,
+    searchRateLimit,
     checkCache,
     searchVersesController,
   )
   app.get(
     "/v1/books",
-    fullBookRateLimit,
     validateBooksParams,
+    fullBookRateLimit,
     checkCache,
     getBooksController,
   )
@@ -88,8 +93,8 @@ export default (app: express.Express): void => {
 
   app.get(
     "/v1/:book",
-    fullBookRateLimit,
     validateQueryParams(["withVerses"]),
+    fullBookRateLimit,
     checkCache,
     getBookController,
   )
