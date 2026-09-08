@@ -2,6 +2,71 @@ import type { createClient } from "redis"
 import { normalizeText } from "../../util/normalizeText"
 import { getVerse } from "../verse/getVerse"
 
+// Runs of ASCII whitespace collapse to one space, so a note that wraps
+// mid-sentence in the source reads as a single line. Non-breaking spaces are
+// load-bearing inside references like "Sl 104,3", and folding only ASCII
+// leaves those untouched. trim() is deliberately Unicode-aware: at the ends of
+// a note it clears the stray non-breaking spaces and leading byte-order marks
+// this corpus carries, which are noise rather than typesetting.
+const collapseWhitespace = (value: string): string =>
+  value.replace(/[\t\n\r ]+/g, " ").trim()
+
+// \ft introduces the note body and \bd / \bdit only style it, so the markers
+// themselves are dropped and the text they wrap is kept.
+const FOOTNOTE_MARKERS = /\\[a-z0-9+]+\*?/gi
+
+// The caller that opens a note's content ("+" in `\f + \fr 1.1 \ft ...\f*").
+const FOOTNOTE_CALLER = /^\s*[+\-?]\s*/
+
+/**
+ * Isolates the prose of a footnote part, before its markers are stripped.
+ *
+ * The body is whatever follows \fr's value. Everything before it is the caller
+ * or a decorative marker — sources in the wild write
+ * `\f + \ft ❑ \fr 7. \ft Ver Lc 4,18.\f*`, where the first \ft holds "❑" and the
+ * note itself only appears after the reference. Anchoring on the reference
+ * rather than on the first \ft is what keeps that note from being lost.
+ */
+const footnoteBody = (
+  part: string,
+  frMatch: RegExpExecArray | null,
+  isContinuation: boolean,
+): string => {
+  if (frMatch) return part.slice(frMatch.index + frMatch[0].length)
+  // A \fp paragraph opens mid-note, so it carries neither caller nor reference
+  // and its prose starts right at the marker.
+  if (isContinuation) return part
+  return part.replace(FOOTNOTE_CALLER, "")
+}
+
+/**
+ * Reads one footnote part into its reference and body.
+ *
+ * `isContinuation` marks the parts after a \fp: those open a new paragraph of
+ * the same note, so they carry neither a caller nor a reference, and often no
+ * \ft either — their text follows the marker directly.
+ *
+ * Returns null when the part has no body, which is not a note worth storing.
+ */
+const parseFootnotePart = (
+  part: string,
+  isContinuation: boolean,
+): _Footnote | null => {
+  const frMatch = /\\fr\s+([^\\]*)/.exec(part)
+  const body = footnoteBody(part, frMatch, isContinuation)
+
+  const text = collapseWhitespace(body.replace(FOOTNOTE_MARKERS, " "))
+  if (!text) return null
+
+  // \fr is optional in USFM, and \fp paragraphs never repeat it, so a note
+  // without one keeps its text instead of being discarded.
+  return {
+    type: "footnote",
+    text,
+    reference: frMatch ? collapseWhitespace(frMatch[1]) : "",
+  }
+}
+
 export const storeVerse = async (
   client: ReturnType<typeof createClient>,
   bookId: string,
@@ -83,23 +148,14 @@ export const storeVerse = async (
         normalizedText: normalizeText(text),
       })
     } else if (verseObject.tag === "f") {
-      const text = verseObject.content?.replace(/[*\n]/g, "") ?? ""
-      // Split by \fp (new footnote marker)
-      const footnoteParts = text.split(/\\fp\s*/)
-      for (const part of footnoteParts) {
-        // Extract \fr ... \ft ... from each part
-        // Captures are greedy with no overlapping quantifiers (linear time);
-        // surrounding whitespace is stripped by the .trim() calls below.
-        const frMatch = /\\fr\s([^\\]+)\\ft/.exec(part)
-        const ftMatch = /\\ft\s([^\\]+)(?=\\fr|\\f\*|$)/.exec(part)
-        if (frMatch && ftMatch) {
-          const footnoteReference = frMatch[1].trim()
-          const footnoteText = ftMatch[1].trim()
-          verseData.text.push({
-            type: "footnote",
-            text: footnoteText,
-            reference: footnoteReference,
-          })
+      // \fp opens an additional paragraph of the same note; each part becomes
+      // its own footnote entry. Asterisks survive: they are stripped only as
+      // part of a closing marker, so a literal "*" in the prose is kept.
+      const parts = (verseObject.content ?? "").split(/\\fp\s*/)
+      for (const [index, part] of parts.entries()) {
+        const footnote = parseFootnotePart(part, index > 0)
+        if (footnote) {
+          verseData.text.push(footnote)
         }
       }
     }
