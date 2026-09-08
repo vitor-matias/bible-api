@@ -16,13 +16,28 @@ const FOOTNOTE_MARKERS = /\\[a-z0-9+]+\*?/gi
 const FOOTNOTE_CALLER = /^\s*[+\-?]\s*/
 
 /**
- * Reads one footnote part into its reference and body.
+ * Isolates the prose of a footnote part, before its markers are stripped.
  *
  * The body is whatever follows \fr's value. Everything before it is the caller
  * or a decorative marker — sources in the wild write
  * `\f + \ft ❑ \fr 7. \ft Ver Lc 4,18.\f*`, where the first \ft holds "❑" and the
  * note itself only appears after the reference. Anchoring on the reference
  * rather than on the first \ft is what keeps that note from being lost.
+ */
+const footnoteBody = (
+  part: string,
+  frMatch: RegExpExecArray | null,
+  isContinuation: boolean,
+): string => {
+  if (frMatch) return part.slice(frMatch.index + frMatch[0].length)
+  // A \fp paragraph opens mid-note, so it carries neither caller nor reference
+  // and its prose starts right at the marker.
+  if (isContinuation) return part
+  return part.replace(FOOTNOTE_CALLER, "")
+}
+
+/**
+ * Reads one footnote part into its reference and body.
  *
  * `isContinuation` marks the parts after a \fp: those open a new paragraph of
  * the same note, so they carry neither a caller nor a reference, and often no
@@ -35,12 +50,7 @@ const parseFootnotePart = (
   isContinuation: boolean,
 ): _Footnote | null => {
   const frMatch = /\\fr\s+([^\\]*)/.exec(part)
-
-  const body = frMatch
-    ? part.slice(frMatch.index + frMatch[0].length)
-    : isContinuation
-      ? part
-      : part.replace(FOOTNOTE_CALLER, "")
+  const body = footnoteBody(part, frMatch, isContinuation)
 
   const text = collapseWhitespace(body.replace(FOOTNOTE_MARKERS, " "))
   if (!text) return null
