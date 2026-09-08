@@ -1,30 +1,23 @@
 import OpenAI from "openai"
-import "dotenv/config"
 
-const getOpenAIClient = (): OpenAI => {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new Error("OPENAI_API_KEY environment variable is required")
+let _openai: OpenAI | null = null
+
+const getClient = (): OpenAI => {
+  if (!_openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY environment variable is required")
+    }
+    // Bound the request lifetime so a stalled OpenAI call can't hang a search
+    // request indefinitely; 30s still leaves headroom for the larger
+    // per-chapter batches during import. Default retries (2) are kept.
+    _openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+      timeout: 30_000,
+    })
   }
-  return new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  })
+  return _openai
 }
 
-/**
- * Generates embedding vectors for multiple texts using OpenAI's `text-embedding-3-small` model.
- *
- * This function batches multiple texts into a single API call, which is more efficient than
- * generating embeddings one at a time. Empty texts are filtered out, and their corresponding
- * positions in the result array will contain empty arrays.
- *
- * @param texts - An array of input texts to embed. Empty texts will be skipped.
- * @returns A promise that resolves to an array of numeric arrays, where each inner array represents
- *          an embedding vector. Positions corresponding to invalid texts will contain empty arrays.
- *
- * @throws {Error} If the embedding request to OpenAI fails for any reason, including network issues,
- *                 invalid or missing `OPENAI_API_KEY`, or other API errors. The original error message,
- *                 when available, is included in the thrown error.
- */
 export const generateEmbeddings = async (
   texts: string[],
 ): Promise<number[][]> => {
@@ -32,7 +25,6 @@ export const generateEmbeddings = async (
     return []
   }
 
-  // Filter out empty texts and track their indices
   const validTexts: { index: number; text: string }[] = []
   texts.forEach((text, index) => {
     if (text && text.trim().length > 0) {
@@ -45,17 +37,21 @@ export const generateEmbeddings = async (
   }
 
   try {
-    const openai = getOpenAIClient()
-    const response = await openai.embeddings.create({
+    const response = await getClient().embeddings.create({
       model: "text-embedding-3-small",
       input: validTexts.map((v) => v.text),
     })
 
-    // Map embeddings back to original indices
+    // Map by the index the API reports rather than by array position, so a
+    // reordered or unexpectedly sized response can't pair verses with the
+    // wrong vector.
     const result: number[][] = texts.map(() => [])
-    response.data.forEach((embedding, i) => {
-      result[validTexts[i].index] = embedding.embedding
-    })
+    for (const item of response.data) {
+      const source = validTexts[item.index]
+      if (source) {
+        result[source.index] = item.embedding
+      }
+    }
 
     return result
   } catch (error) {
@@ -66,33 +62,13 @@ export const generateEmbeddings = async (
   }
 }
 
-/**
- * Generates an embedding vector for the given text using OpenAI's `text-embedding-3-small` model.
- *
- * The input text must be non-empty and no longer than 2,000 characters. This function wraps
- * the OpenAI embeddings API and returns the first embedding vector from the response.
- *
- * @param text - The input text to embed. Must be a non-empty string with a maximum length of 2,000 characters.
- * @returns A promise that resolves to a numeric array representing the embedding vector.
- *
- * @throws {Error} If the `text` is empty or only whitespace.
- * @throws {Error} If the `text` exceeds the 2,000 character limit.
- * @throws {Error} If the embedding request to OpenAI fails for any reason, including network issues,
- *                 invalid or missing `OPENAI_API_KEY`, or other API errors. The original error message,
- *                 when available, is included in the thrown error.
- */
 export const generateEmbedding = async (text: string): Promise<number[]> => {
   if (!text || text.trim().length === 0) {
     throw new Error("Text cannot be empty")
   }
 
-  if (text.length > 2000) {
-    throw new Error("Text must be 2,000 characters or fewer")
-  }
-
   try {
-    const openai = getOpenAIClient()
-    const response = await openai.embeddings.create({
+    const response = await getClient().embeddings.create({
       model: "text-embedding-3-small",
       input: text,
     })

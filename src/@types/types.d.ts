@@ -51,8 +51,72 @@ type Book = {
   shortName: string
   abrv: string
   chapterCount: number
+  introduction?: IntroElement[]
   chapters?: Chapter[]
 }
+
+type IntroElement =
+  | IntroTitle
+  | IntroParagraph
+  | IntroSection
+  | IntroOutline
+  | IntroTable
+  | IntroListItem
+  | IntroSidebar
+  | IntroMajorSection
+
+type IntroTitle = {
+  type: "introTitle"
+  level: 1 | 2
+  text: string
+}
+
+type IntroParagraph = {
+  type: "introParagraph"
+  text: string
+}
+
+type IntroSection = {
+  type: "introSection"
+  level: 1 | 2
+  text: string
+}
+
+type IntroOutline = {
+  type: "introOutline"
+  text: string
+}
+
+type IntroTable = {
+  type: "introTable"
+  rows: string[][]
+}
+
+type IntroListItem = {
+  type: "introListItem"
+  text: string
+}
+
+type IntroSidebar = {
+  type: "introSidebar"
+  content: IntroElement[]
+}
+
+type IntroMajorSection = {
+  type: "introMajorSection"
+  text: string
+}
+
+// Front-matter introductions (USFM \id FRT / INT). Stored outside the book
+// namespace because every such file shares one id, and outside every search
+// index because introductions are not search content.
+type BookIntro = {
+  slug: string
+  name: string
+  introduction: IntroElement[]
+}
+
+type IntroSummary = Pick<BookIntro, "slug" | "name">
 
 type Chapter = {
   bookId: Book["id"]
