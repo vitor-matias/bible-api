@@ -2,9 +2,12 @@ import type { createClient } from "redis"
 import { normalizeText } from "../../util/normalizeText"
 import { getVerse } from "../verse/getVerse"
 
-// Only ASCII whitespace is folded. Footnote prose uses non-breaking spaces
-// deliberately (  inside references such as "Sl 104,3"), so those are left
-// exactly as the source wrote them.
+// Runs of ASCII whitespace collapse to one space, so a note that wraps
+// mid-sentence in the source reads as a single line. Non-breaking spaces are
+// load-bearing inside references like "Sl 104,3", and folding only ASCII
+// leaves those untouched. trim() is deliberately Unicode-aware: at the ends of
+// a note it clears the stray non-breaking spaces and leading byte-order marks
+// this corpus carries, which are noise rather than typesetting.
 const collapseWhitespace = (value: string): string =>
   value.replace(/[\t\n\r ]+/g, " ").trim()
 
