@@ -48,9 +48,9 @@ The database must hold the Bible before the API can serve it.
   `loading`, and picks the data up within 15 seconds of the import finishing.
 
 Leave `PATH_TO_TEXTS` unset on a hosted service that has no texts, so the API
-waits for `npm run import`. If the database is marked as imported but holds no
-verses, the API reports `failed` (and `/health` answers `503`) until you import
-and restart it.
+waits for `npm run import`. A completion marker with no verses behind it is
+ignored, so a database like that counts as empty and is imported (or waited for)
+again.
 
 The import first checks that the folder holds `.usfm` files and that OpenAI
 answers, so a wrong folder or a bad key fails before anything is deleted. Then it
@@ -60,6 +60,36 @@ per chapter: expect several minutes and a few cents. It marks itself complete
 
 **Restart the API after re-importing.** The search index is loaded into memory at
 startup and is not refreshed while the process runs.
+
+## Hosting the texts
+
+Render's Secret Files cannot hold the texts (1 MB in total, and file names must
+start with a letter). Keep the USFM files in a private git repository and let the
+build clone it, so they sit next to the code when the service runs. With GitLab:
+
+1. Create a private GitLab project with the `.usfm` files, and a **deploy token**
+   for it (Settings, Repository, Deploy tokens) with the `read_repository` scope.
+2. On the Render service, set `TEXTS_GIT_USER` and `TEXTS_GIT_TOKEN` to the
+   token's username and value.
+3. Set the build command to the line below, and the start command to
+   `node dist/index.js`. The last step removes the clone's `.git` folder, where
+   git keeps the token, so it is not left on the running service.
+
+   ```bash
+   npm ci && npm run build && GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://${TEXTS_GIT_USER}:${TEXTS_GIT_TOKEN}@gitlab.com/<group>/<project>.git texts && rm -rf texts/.git
+   ```
+
+4. Set `PATH_TO_TEXTS=texts` (`texts/<folder>` if the files are in a subfolder).
+   With an empty database the service imports them itself on its first start. That
+   takes several minutes, reports `loading` meanwhile, and peaks near 330 MB of
+   memory, so a 512 MB instance is enough. Set the health check path only after
+   it has finished, because Render cancels a deploy whose health check has not
+   passed within 15 minutes.
+
+To load changed texts, redeploy so the build clones again, with `--reimport` added
+to the start command for that deploy (and removed afterwards, or every restart
+would reimport). A reimport flushes the database first, so the API answers with
+errors until it has finished.
 
 ## Health check
 

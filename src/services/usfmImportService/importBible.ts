@@ -2,22 +2,13 @@ import * as path from "node:path"
 import type { createClient } from "redis"
 import { flushDatabase } from "../../util/flushDatabase"
 import { generateEmbedding } from "../openai/embeddings"
+import { IMPORT_COMPLETE_KEY } from "./importMarker"
 import { listUsfmFiles } from "./listUsfmFiles"
 import { readBook } from "./readBook"
 import { storeBook } from "./storeBook"
 import { getEmbeddingFailureCount } from "./storeChapter"
 
-// Written only after a full import finishes, so a crash mid-import leaves the
-// marker absent and the next start reimports instead of serving partial data.
-// The suffix is part of the storage format: bump it when the layout changes so
-// existing databases reimport instead of being read with the wrong assumptions.
-// v3: plain string values and binary vectors, no RedisJSON or RediSearch.
-export const IMPORT_COMPLETE_KEY = "importComplete:v3"
-
 type Client = ReturnType<typeof createClient>
-
-export const isDataImported = async (client: Client): Promise<boolean> =>
-  (await client.exists(IMPORT_COMPLETE_KEY)) === 1
 
 // Flushes the database, then loads every USFM book in `textsPath` into it,
 // embedding each verse. The completion marker is only written if every chapter

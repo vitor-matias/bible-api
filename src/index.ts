@@ -7,10 +7,8 @@ import {
   getSearchIndexStats,
   loadSearchIndex,
 } from "./services/search/searchIndex"
-import {
-  importBible,
-  isDataImported,
-} from "./services/usfmImportService/importBible"
+import { importBible } from "./services/usfmImportService/importBible"
+import { isDataImported } from "./services/usfmImportService/importMarker"
 import { buildHealth, pingDatabase } from "./util/health"
 import {
   getImportState,
@@ -181,7 +179,7 @@ async function loadData(): Promise<ImportState> {
 
     if (stats.verses === 0) {
       console.error(
-        "The database is marked as imported but holds no verses. Run `npm run import` with the USFM texts, then restart the API.",
+        "The database holds no readable verses. Run `npm run import` with the USFM texts, then restart the API.",
       )
     }
 
