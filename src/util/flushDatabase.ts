@@ -36,16 +36,14 @@ export const flushDatabase = async () => {
       },
     )
 
+    // Hashes, not JSON: a vector is stored as its raw float32 bytes (see
+    // storeChapter). The "key" field is only returned by queries, never
+    // searched, so it stays out of the schema.
     await client.ft.create(
       "idx:verseEmbeddings",
       {
-        "$.key": {
-          type: "TEXT",
-          AS: "key",
-        },
-        "$.embedding": {
+        embedding: {
           type: "VECTOR",
-          AS: "embedding",
           ALGORITHM: "HNSW",
           TYPE: "FLOAT32",
           DIM: 1536, // Dimension for text-embedding-3-small
@@ -53,7 +51,7 @@ export const flushDatabase = async () => {
         },
       },
       {
-        ON: "JSON",
+        ON: "HASH",
         PREFIX: "embedding:",
       },
     )

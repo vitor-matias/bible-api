@@ -22,7 +22,7 @@ require("dotenv").config()
 // marker absent and the next start reimports instead of serving partial data.
 // The suffix is part of the storage format: bump it when the layout changes so
 // existing databases reimport instead of being read with the wrong assumptions.
-const IMPORT_COMPLETE_KEY = "importComplete:v2"
+const IMPORT_COMPLETE_KEY = "importComplete:v3"
 
 const app = express()
 app.disable("x-powered-by")

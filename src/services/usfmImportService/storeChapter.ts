@@ -1,6 +1,8 @@
 import type { createClient } from "redis"
+import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { generateEmbeddings } from "../openai/embeddings"
+import { verseKey } from "../verse/getVerse"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
 // Repeated failures indicate a systemic problem (bad OPENAI_API_KEY, outage)
@@ -190,19 +192,17 @@ export const storeChapter = async (
     try {
       const embeddings = await generateEmbeddings(texts)
 
-      // Store all embeddings in one pipelined round trip
+      // Store all embeddings in one pipelined round trip. Each vector is kept
+      // as its raw float32 bytes in a hash: RedisJSON would spend ~27 bytes per
+      // number, turning a 6 KB vector into ~41 KB — 65% of the whole database.
       const multi = client.multi()
       for (let i = 0; i < versesData.length; i++) {
         const v = versesData[i].verseData
         if (embeddings[i] && embeddings[i].length > 0) {
-          multi.json.set(
-            `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
-            "$",
-            {
-              key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
-              embedding: embeddings[i],
-            },
-          )
+          multi.hSet(`embedding:${v.bookId}:${v.chapterNumber}:${v.number}`, {
+            key: verseKey(v.bookId, v.chapterNumber, v.number),
+            embedding: toFloat32Buffer(embeddings[i]),
+          })
         }
       }
       await multi.exec()
