@@ -17,7 +17,7 @@ only plain commands: no RedisJSON and no RediSearch.
 | `GET /v1/intros`, `/v1/intros/:slug` | Standalone introductions |
 | `GET /v1/search?text=&page=&limit=` | Full-text search |
 | `GET /v1/search?text=&semantic=true` | Semantic search (at most 100 results) |
-| `GET /health` | `200` once data is loaded, `503` while loading |
+| `GET /health` | `200` when the data is loaded and the database answers, otherwise `503` |
 
 ## Setup
 
@@ -55,6 +55,30 @@ per chapter: expect several minutes and a few cents. It marks itself complete
 **Restart the API after re-importing.** The search index is loaded into memory at
 startup and is not refreshed while the process runs.
 
+## Health check
+
+`GET /health` always answers, even while the data loads, and reports what it sees:
+
+```json
+{ "status": "ready", "database": "ok", "index": { "verses": 31102, "vectors": 31102 } }
+```
+
+- `status` is `loading`, `ready`, `degraded` (some embeddings are missing, still
+  served) or `failed`.
+- `database` is `ok` if a `PING` answers within 1.5 seconds, else `unreachable`.
+  It uses the connection the API already holds and never waits to open one, so
+  it stays fast while the database is down.
+- `index` is what search has in memory; absent until it is loaded.
+
+The status code is `200` for `ready` or `degraded` with the database reachable,
+and `503` otherwise: point a load balancer or orchestrator at it.
+
+On Render, set the service's health check path to `/health`. Render only routes
+traffic to a deploy once the check passes, and cancels a deploy whose check has
+not passed after 15 minutes, so **import the texts before the first deploy**
+rather than letting the new service wait for them. At runtime, Render stops
+routing to an instance after 15 seconds of failures and restarts it after 60.
+
 ## Search
 
 Both searches run inside the API, over data it loads at startup (roughly 5 MB of
@@ -87,4 +111,5 @@ To run everything locally without OpenAI, start the stub, then start the API and
 the import with `OPENAI_API_KEY=stub OPENAI_BASE_URL=http://localhost:4011/v1`.
 The stub returns random vectors, so semantic results are meaningless, but
 everything else is real. `scripts/bench.mjs` needs the API started with
-`TRUST_PROXY=true`, because it sends a different client IP with every request.
+`TRUST_PROXY=true`, because it sends a different client IP with every request,
+and only talks to an API on this machine (an `http://localhost:…` base URL).

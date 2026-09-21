@@ -332,3 +332,14 @@ const requireLoaded = () => {
 export const getTextIndex = (): TextIndex => requireLoaded().text
 
 export const getVectorIndex = (): VectorIndex => requireLoaded().vectors
+
+// What is loaded, for the health check; undefined until the first load.
+export const getSearchIndexStats = ():
+  | { verses: number; vectors: number }
+  | undefined =>
+  loaded
+    ? {
+        verses: loaded.text.keys.length,
+        vectors: loaded.vectors.keys.length,
+      }
+    : undefined

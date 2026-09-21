@@ -3,17 +3,22 @@ import express from "express"
 import helmet from "helmet"
 import { createClient } from "redis"
 import setEndpoints from "./rest"
-import { loadSearchIndex } from "./services/search/searchIndex"
+import {
+  getSearchIndexStats,
+  loadSearchIndex,
+} from "./services/search/searchIndex"
 import {
   importBible,
   isDataImported,
 } from "./services/usfmImportService/importBible"
+import { buildHealth, pingDatabase } from "./util/health"
 import {
   getImportState,
   type ImportState,
   isDataAvailable,
   setImportState,
 } from "./util/importState"
+import { getClient, peekClient } from "./util/sharedClient"
 import { parseTrustProxy } from "./util/trustProxy"
 
 require("dotenv").config()
@@ -61,11 +66,19 @@ const allowedOrigins = (process.env.CORS_ORIGIN ?? "")
 // CORS_ORIGIN would silently break every browser client. Treat it as unset.
 app.use(cors({ origin: allowedOrigins.length > 0 ? allowedOrigins : "*" }))
 
-// Always available, so an orchestrator can tell "still importing" from "dead"
-// instead of seeing a closed port for the whole import. "degraded" still
-// serves: the primary data is complete, only some embeddings are missing.
-app.get("/health", (_req, res) => {
-  res.status(isDataAvailable() ? 200 : 503).json({ status: getImportState() })
+// Always answers, so an orchestrator can tell "still loading" from "dead"
+// instead of seeing a closed port for the whole import. Healthy (200) only when
+// the data is loaded and the database answers a PING; see buildHealth. It uses
+// the connection that already exists and never waits for one, so it stays fast
+// (Render allows five seconds) even while the database is down.
+app.get("/health", async (_req, res) => {
+  const database = await pingDatabase(peekClient())
+  const { code, body } = buildHealth(
+    getImportState(),
+    database,
+    getSearchIndexStats(),
+  )
+  res.status(code).json(body)
 })
 
 // Refuse data requests until the data is loaded, so partially loaded data is
@@ -81,6 +94,12 @@ app.use((_req, res, next) => {
 })
 
 setEndpoints(app)
+
+// Open the shared database connection now instead of on the first data request,
+// so the health check can tell a database that is up from one that is not.
+getClient().catch((error) =>
+  console.error("Could not connect to the database:", error),
+)
 
 // Listen before the data is loaded: a first import can take many minutes, and a
 // closed port makes health checks fail and the container restart from scratch.

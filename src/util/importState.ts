@@ -13,8 +13,10 @@ export const setImportState = (next: ImportState): void => {
 
 // Verses and books are fully imported. "degraded" only means some chapters are
 // missing embeddings, which does not affect the primary data.
-export const isDataAvailable = (): boolean =>
-  state === "ready" || state === "degraded"
+export const isDataLoaded = (status: ImportState): boolean =>
+  status === "ready" || status === "degraded"
+
+export const isDataAvailable = (): boolean => isDataLoaded(state)
 
 // Every chapter's embeddings were written, so KNN results cover the whole
 // corpus rather than an arbitrary subset.
