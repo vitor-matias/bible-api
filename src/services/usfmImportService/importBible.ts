@@ -1,8 +1,8 @@
-import * as fs from "node:fs"
 import * as path from "node:path"
 import type { createClient } from "redis"
 import { flushDatabase } from "../../util/flushDatabase"
 import { generateEmbedding } from "../openai/embeddings"
+import { listUsfmFiles } from "./listUsfmFiles"
 import { readBook } from "./readBook"
 import { storeBook } from "./storeBook"
 import { getEmbeddingFailureCount } from "./storeChapter"
@@ -28,6 +28,10 @@ export const importBible = async (
 ): Promise<{ embeddingFailures: number }> => {
   const start = Date.now()
 
+  // Looked up before anything is deleted: a folder with no texts (a wrong path,
+  // or one holding other files) must fail here, not after the flush.
+  const files = listUsfmFiles(textsPath)
+
   // The import deletes everything before it embeds anything, so confirm OpenAI
   // answers first: a missing, rotated or out-of-quota key then fails while any
   // old data still serves.
@@ -37,13 +41,6 @@ export const importBible = async (
   await flushDatabase()
 
   console.log(textsPath)
-  // readdirSync order is filesystem-dependent. Sorting keeps book numbering
-  // (which feeds searchId) and introduction slug suffixes identical across
-  // machines and reimports.
-  const files = fs
-    .readdirSync(textsPath)
-    .filter((file) => file.endsWith(".usfm"))
-    .sort()
 
   for (const file of files) {
     console.log(file)

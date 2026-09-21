@@ -17,6 +17,7 @@ import {
   type ImportState,
   isDataAvailable,
   setImportState,
+  stateAfterLoad,
 } from "./util/importState"
 import { getClient, peekClient } from "./util/sharedClient"
 import { parseTrustProxy } from "./util/trustProxy"
@@ -178,9 +179,13 @@ async function loadData(): Promise<ImportState> {
       `Search index loaded: ${stats.verses} verses, ${stats.vectors} vectors${skipped}.`,
     )
 
-    const complete =
-      embeddingFailures === 0 && stats.vectors > 0 && stats.skippedVectors === 0
-    return complete ? "ready" : "degraded"
+    if (stats.verses === 0) {
+      console.error(
+        "The database is marked as imported but holds no verses. Run `npm run import` with the USFM texts, then restart the API.",
+      )
+    }
+
+    return stateAfterLoad(embeddingFailures, stats)
   } finally {
     await client.quit()
   }

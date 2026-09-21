@@ -47,8 +47,14 @@ The database must hold the Bible before the API can serve it.
   has them, with `DB_URL` pointing at the hosted database. The API waits, reports
   `loading`, and picks the data up within 15 seconds of the import finishing.
 
-The import first checks that OpenAI answers, so a bad key fails before anything
-is deleted. Then it flushes the database and embeds every verse, one OpenAI call
+Leave `PATH_TO_TEXTS` unset on a hosted service that has no texts, so the API
+waits for `npm run import`. If the database is marked as imported but holds no
+verses, the API reports `failed` (and `/health` answers `503`) until you import
+and restart it.
+
+The import first checks that the folder holds `.usfm` files and that OpenAI
+answers, so a wrong folder or a bad key fails before anything is deleted. Then it
+flushes the database and embeds every verse, one OpenAI call
 per chapter: expect several minutes and a few cents. It marks itself complete
 (`importComplete:v3`) only when every chapter embedded.
 
