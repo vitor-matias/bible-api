@@ -10,6 +10,7 @@
 //
 // STUB_PORT (default 4011) and STUB_DIM (default 512) configure it; a request's
 // own `dimensions` parameter wins over STUB_DIM, like the real API's.
+import { randomFillSync } from "node:crypto"
 import { createServer } from "node:http"
 
 const DEFAULT_DIMENSIONS = Number(process.env.STUB_DIM || 512)
@@ -19,10 +20,16 @@ const randomUnitVector = (dimensions) => {
   const vector = new Float32Array(dimensions)
   let squares = 0
 
+  // Two uniform numbers per component, drawn from the operating system's
+  // generator in one call. Nothing here needs unpredictability; it is used only
+  // so that no pseudo-random generator is involved at all.
+  const entropy = randomFillSync(new Uint32Array(2 * dimensions))
+
   for (let i = 0; i < dimensions; i++) {
     // Box-Muller: gaussian components give uniformly distributed directions.
-    const u = 1 - Math.random()
-    const v = Math.random()
+    // Both numbers fall in (0, 1], so the logarithm is always finite.
+    const u = (entropy[2 * i] + 1) / 2 ** 32
+    const v = (entropy[2 * i + 1] + 1) / 2 ** 32
     const x = Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
     vector[i] = x
     squares += x * x
