@@ -71,7 +71,7 @@ async function run(name, paths, concurrency) {
   const at = (p) =>
     latencies[
       Math.min(latencies.length - 1, Math.floor(p * latencies.length))
-    ] ?? NaN
+    ] ?? Number.NaN
   rows.push({
     name,
     c: concurrency,
@@ -114,8 +114,8 @@ console.log(
 for (const w of vocabulary.slice(0, 5))
   await once(`/v1/search?text=${w}&limit=10&page=1`)
 
-await run("chapter, cached", Array(400).fill("/v1/gen/1"), 1)
-await run("chapter, cached", Array(1000).fill("/v1/gen/1"), 16)
+await run("chapter, cached", new Array(400).fill("/v1/gen/1"), 1)
+await run("chapter, cached", new Array(1000).fill("/v1/gen/1"), 16)
 await run("chapter, not cached", chapters.slice(100, 400), 1)
 await run("chapter, not cached", chapters.slice(400, 900), 16)
 const q = (w) => `/v1/search?text=${w}&limit=10&page=1`

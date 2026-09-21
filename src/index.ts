@@ -170,8 +170,12 @@ async function loadData(): Promise<ImportState> {
     }
 
     const stats = await loadSearchIndex(client)
+    const skipped =
+      stats.skippedVectors > 0
+        ? `, ${stats.skippedVectors} unreadable vectors skipped`
+        : ""
     console.info(
-      `Search index loaded: ${stats.verses} verses, ${stats.vectors} vectors${stats.skippedVectors > 0 ? `, ${stats.skippedVectors} unreadable vectors skipped` : ""}.`,
+      `Search index loaded: ${stats.verses} verses, ${stats.vectors} vectors${skipped}.`,
     )
 
     const complete =

@@ -80,9 +80,10 @@ export const buildTextIndex = (entries: readonly TextEntry[]): TextIndex => {
   sorted.forEach((entry, verse) => {
     const segments = entry.segments.map((segment) => tokenize(segment))
 
-    haystacks.push(
-      ` ${segments.map((words) => words.join(" ")).join(` ${SEGMENT_BREAK} `)} `,
-    )
+    const text = segments
+      .map((words) => words.join(" "))
+      .join(` ${SEGMENT_BREAK} `)
+    haystacks.push(` ${text} `)
 
     // Verses are visited in order, so each list stays ascending; a verse is
     // listed once per word however often the word occurs in it.
@@ -99,6 +100,25 @@ export const buildTextIndex = (entries: readonly TextEntry[]): TextIndex => {
   return { keys: sorted.map((entry) => entry.key), haystacks, postings }
 }
 
+// Every verse that matches contains all of the query's words, so it is enough to
+// look at the verses holding the rarest one. Undefined when there are no words,
+// or when one of them occurs nowhere.
+const candidateVerses = (
+  index: TextIndex,
+  tokens: readonly string[],
+): Int32Array | undefined => {
+  let candidates: Int32Array | undefined
+
+  for (const token of new Set(tokens)) {
+    const verses = index.postings.get(token)
+
+    if (!verses) return undefined
+    if (!candidates || verses.length < candidates.length) candidates = verses
+  }
+
+  return candidates
+}
+
 // Verses containing the query as an exact phrase of whole words, in verse
 // order. `offset` and `limit` select one page; `total` counts every match.
 export const findPhrase = (
@@ -108,18 +128,8 @@ export const findPhrase = (
   limit: number,
 ): { keys: string[]; total: number } => {
   const tokens = tokenize(normalizedQuery)
+  const candidates = candidateVerses(index, tokens)
 
-  if (tokens.length === 0) return { keys: [], total: 0 }
-
-  // Every verse that matches contains all of the query's words, so it is enough
-  // to look at the verses holding the rarest one.
-  let candidates: Int32Array | undefined
-  for (const token of new Set(tokens)) {
-    const verses = index.postings.get(token)
-
-    if (!verses) return { keys: [], total: 0 }
-    if (!candidates || verses.length < candidates.length) candidates = verses
-  }
   if (!candidates) return { keys: [], total: 0 }
 
   const keys: string[] = []
