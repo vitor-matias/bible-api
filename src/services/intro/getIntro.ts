@@ -1,11 +1,11 @@
 import type { createClient } from "redis"
+import { getJson, mGetJson } from "../../util/jsonStore"
 import { INTRO_LIST_KEY, introKey } from "../usfmImportService/storeIntro"
 
 export const getIntro = async (
   client: ReturnType<typeof createClient>,
   slug: string,
-): Promise<BookIntro | null> =>
-  (await client.json.get(introKey(slug))) as BookIntro | null
+): Promise<BookIntro | null> => getJson<BookIntro>(client, introKey(slug))
 
 // Listing omits the introduction bodies, which are large; callers fetch a
 // single intro by slug to get its content.
@@ -16,11 +16,10 @@ export const listIntros = async (
 
   if (slugs.length === 0) return []
 
-  const docs = await client.json.mGet(slugs.map(introKey), "$")
+  const docs = await mGetJson<BookIntro>(client, slugs.map(introKey))
   const intros: IntroSummary[] = []
 
-  for (const doc of docs) {
-    const intro = (doc as unknown as BookIntro[] | null)?.[0]
+  for (const intro of docs) {
     if (intro) {
       intros.push({ slug: intro.slug, name: intro.name })
     }

@@ -1,28 +1,22 @@
-import * as fs from "node:fs"
-import * as path from "node:path"
 import cors from "cors"
 import express from "express"
 import helmet from "helmet"
 import { createClient } from "redis"
 import setEndpoints from "./rest"
-import { readBook } from "./services/usfmImportService/readBook"
-import { storeBook } from "./services/usfmImportService/storeBook"
-import { getEmbeddingFailureCount } from "./services/usfmImportService/storeChapter"
-import { flushDatabase } from "./util/flushDatabase"
+import { loadSearchIndex } from "./services/search/searchIndex"
+import {
+  importBible,
+  isDataImported,
+} from "./services/usfmImportService/importBible"
 import {
   getImportState,
+  type ImportState,
   isDataAvailable,
   setImportState,
 } from "./util/importState"
 import { parseTrustProxy } from "./util/trustProxy"
 
 require("dotenv").config()
-
-// Written only after a full import finishes, so a crash mid-import leaves the
-// marker absent and the next start reimports instead of serving partial data.
-// The suffix is part of the storage format: bump it when the layout changes so
-// existing databases reimport instead of being read with the wrong assumptions.
-const IMPORT_COMPLETE_KEY = "importComplete:v2"
 
 const app = express()
 app.disable("x-powered-by")
@@ -74,7 +68,7 @@ app.get("/health", (_req, res) => {
   res.status(isDataAvailable() ? 200 : 503).json({ status: getImportState() })
 })
 
-// Refuse data requests until the import finishes, so partially loaded data is
+// Refuse data requests until the data is loaded, so partially loaded data is
 // never served.
 app.use((_req, res, next) => {
   if (!isDataAvailable()) {
@@ -88,29 +82,35 @@ app.use((_req, res, next) => {
 
 setEndpoints(app)
 
-// Listen before the import runs: it can take many minutes, and a closed port
-// makes health checks fail and the container restart from scratch.
+// Listen before the data is loaded: a first import can take many minutes, and a
+// closed port makes health checks fail and the container restart from scratch.
 app.listen(port, () => {
   console.info(`Server is up and running at http://localhost:${port}`)
 })
 
-loadFilesIntoMemory()
-  .then(() => {
-    // Chapters whose embeddings failed are absent from the vector index, so
-    // semantic search would silently answer from a partial corpus. Serve the
-    // primary data, but mark the process degraded and refuse semantic search.
-    setImportState(getEmbeddingFailureCount() > 0 ? "degraded" : "ready")
-  })
+loadData()
+  .then(setImportState)
   .catch((error) => {
     setImportState("failed")
     console.error("Fatal startup error:", error)
   })
 
-// Loads the Bible data into Redis. Skips re-importing (and the destructive
-// flush + costly embedding regeneration) when data is already present, unless
-// the process is started with --reimport.
-async function loadFilesIntoMemory() {
-  const start = Date.now()
+// How often a process with no texts of its own looks for an import to finish.
+const IMPORT_POLL_MS = 15_000
+
+const waitForImport = async (
+  client: ReturnType<typeof createClient>,
+): Promise<void> => {
+  while (!(await isDataImported(client))) {
+    await new Promise((resolve) => setTimeout(resolve, IMPORT_POLL_MS))
+  }
+}
+
+// Makes sure the Bible is in the database, then loads what search needs into
+// memory. Skips re-importing (and the destructive flush + costly embedding
+// regeneration) when data is already present, unless the process is started
+// with --reimport. Resolves to the state the API should report.
+async function loadData(): Promise<ImportState> {
   const reimport = process.argv.includes("--reimport")
 
   const client = createClient({
@@ -119,53 +119,45 @@ async function loadFilesIntoMemory() {
   })
   client.on("error", (err) => console.error(`Redis client error: ${err}`))
   await client.connect()
-  try {
-    const alreadyLoaded = (await client.exists(IMPORT_COMPLETE_KEY)) === 1
 
-    if (alreadyLoaded && !reimport) {
+  try {
+    // Chapters whose embeddings failed are absent from the vector index, so
+    // semantic search would silently answer from a partial corpus. The primary
+    // data is still served, but the process is marked degraded and refuses
+    // semantic search.
+    let embeddingFailures = 0
+
+    if (reimport || !(await isDataImported(client))) {
+      const textsPath = process.env.PATH_TO_TEXTS
+
+      if (textsPath) {
+        embeddingFailures = (await importBible(client, textsPath))
+          .embeddingFailures
+      } else if (reimport) {
+        throw new Error("--reimport needs PATH_TO_TEXTS to read the texts from")
+      } else {
+        // A hosted instance usually has no texts on disk. It stays up, reports
+        // "loading", and picks the data up once `npm run import` has filled the
+        // database it points at.
+        console.warn(
+          "No Bible data in the database and PATH_TO_TEXTS is not set, so this process cannot import it. Run `npm run import` against this database; the data is loaded here as soon as it appears.",
+        )
+        await waitForImport(client)
+      }
+    } else {
       console.info(
         "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
       )
-      return
     }
 
-    // flushDatabase also clears any stale completion marker.
-    await flushDatabase()
+    const stats = await loadSearchIndex(client)
+    console.info(
+      `Search index loaded: ${stats.verses} verses, ${stats.vectors} vectors${stats.skippedVectors > 0 ? `, ${stats.skippedVectors} unreadable vectors skipped` : ""}.`,
+    )
 
-    const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
-    console.log(filePath)
-    // readdirSync order is filesystem-dependent. Sorting keeps book numbering
-    // (which feeds searchId) and introduction slug suffixes identical across
-    // machines and reimports.
-    const files = fs
-      .readdirSync(filePath)
-      .filter((file) => file.endsWith(".usfm"))
-      .sort()
-
-    const chunkSize = 1
-    for (let i = 0; i < files.length; i += chunkSize) {
-      const chunk = files.slice(i, i + chunkSize)
-      await Promise.all(
-        chunk.map(async (file) => {
-          console.log(file)
-          const bibleData = await readBook(path.join(filePath, file))
-          await storeBook(client, bibleData, file)
-        }),
-      )
-    }
-
-    const embeddingFailures = getEmbeddingFailureCount()
-    if (embeddingFailures > 0) {
-      // Leaving the marker unwritten keeps the next start from silently serving
-      // a corpus whose semantic index is permanently missing these chapters.
-      console.warn(
-        `WARNING: embeddings failed for ${embeddingFailures} chapter(s); semantic search would miss their verses, so the import is not marked complete and the next start will reimport.`,
-      )
-    } else {
-      await client.set(IMPORT_COMPLETE_KEY, "1")
-    }
-
-    console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
+    const complete =
+      embeddingFailures === 0 && stats.vectors > 0 && stats.skippedVectors === 0
+    return complete ? "ready" : "degraded"
   } finally {
     await client.quit()
   }

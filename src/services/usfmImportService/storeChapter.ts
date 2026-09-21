@@ -1,6 +1,8 @@
 import type { createClient } from "redis"
+import { encodeVector } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { generateEmbeddings } from "../openai/embeddings"
+import { embeddingKey } from "../search/embeddingKey"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
 // Repeated failures indicate a systemic problem (bad OPENAI_API_KEY, outage)
@@ -195,13 +197,12 @@ export const storeChapter = async (
       for (let i = 0; i < versesData.length; i++) {
         const v = versesData[i].verseData
         if (embeddings[i] && embeddings[i].length > 0) {
-          multi.json.set(
-            `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
-            "$",
-            {
-              key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
-              embedding: embeddings[i],
-            },
+          // encodeVector rejects a vector of the wrong length, which lands in
+          // the catch below as a failed chapter rather than being stored and
+          // then silently mis-read.
+          multi.set(
+            embeddingKey(v.bookId, v.chapterNumber, v.number),
+            encodeVector(embeddings[i]),
           )
         }
       }
