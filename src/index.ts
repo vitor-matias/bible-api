@@ -5,15 +5,19 @@ import express from "express"
 import helmet from "helmet"
 import { createClient } from "redis"
 import setEndpoints from "./rest"
+import { generateEmbedding } from "./services/openai/embeddings"
 import { readBook } from "./services/usfmImportService/readBook"
 import { storeBook } from "./services/usfmImportService/storeBook"
 import { getEmbeddingFailureCount } from "./services/usfmImportService/storeChapter"
+import { verifyEmbeddingIndex } from "./util/embeddingIndex"
 import { flushDatabase } from "./util/flushDatabase"
 import {
   getImportState,
   isDataAvailable,
   setImportState,
 } from "./util/importState"
+import { migrateEmbeddingsToHashes } from "./util/migrateEmbeddings"
+import { assertRedisModules } from "./util/requireRedisModules"
 import { parseTrustProxy } from "./util/trustProxy"
 
 require("dotenv").config()
@@ -21,8 +25,14 @@ require("dotenv").config()
 // Written only after a full import finishes, so a crash mid-import leaves the
 // marker absent and the next start reimports instead of serving partial data.
 // The suffix is part of the storage format: bump it when the layout changes so
-// existing databases reimport instead of being read with the wrong assumptions.
+// existing databases are migrated or reimported instead of being read with the
+// wrong assumptions.
 const IMPORT_COMPLETE_KEY = "importComplete:v3"
+
+// v2 held complete Bible data and differed from v3 only in how embeddings are
+// stored, so those databases are converted in place rather than reimported.
+// The marker is left in place, which keeps a rollback to the v2 build working.
+const LEGACY_IMPORT_COMPLETE_KEY = "importComplete:v2"
 
 const app = express()
 app.disable("x-powered-by")
@@ -95,21 +105,55 @@ app.listen(port, () => {
 })
 
 loadFilesIntoMemory()
-  .then(() => {
+  .then((semanticIndexComplete) => {
     // Chapters whose embeddings failed are absent from the vector index, so
     // semantic search would silently answer from a partial corpus. Serve the
     // primary data, but mark the process degraded and refuse semantic search.
-    setImportState(getEmbeddingFailureCount() > 0 ? "degraded" : "ready")
+    setImportState(
+      semanticIndexComplete && getEmbeddingFailureCount() === 0
+        ? "ready"
+        : "degraded",
+    )
   })
   .catch((error) => {
     setImportState("failed")
     console.error("Fatal startup error:", error)
   })
 
+// Converts a v2 database's embeddings in place. The books and verses are never
+// touched, so they are served while it runs; only semantic search waits.
+// Resolves to whether the semantic index ended up complete.
+async function migrateLegacyEmbeddings(
+  client: ReturnType<typeof createClient>,
+  start: number,
+): Promise<boolean> {
+  console.info(
+    "Converting v2 embeddings to hashes in place; semantic search is unavailable until it finishes.",
+  )
+  setImportState("degraded")
+  try {
+    const converted = await migrateEmbeddingsToHashes(client)
+    await client.set(IMPORT_COMPLETE_KEY, "1")
+    console.log(
+      `converted ${converted} embeddings. took ${(Date.now() - start) / 1000}s`,
+    )
+    return true
+  } catch (error) {
+    // Nothing was lost and the conversion resumes where it stopped, so the
+    // next start retries instead of the data being treated as missing.
+    console.error(
+      "Embedding conversion failed; semantic search stays unavailable until the next start:",
+      error,
+    )
+    return false
+  }
+}
+
 // Loads the Bible data into Redis. Skips re-importing (and the destructive
 // flush + costly embedding regeneration) when data is already present, unless
-// the process is started with --reimport.
-async function loadFilesIntoMemory() {
+// the process is started with --reimport. Resolves to whether the semantic
+// index is complete.
+async function loadFilesIntoMemory(): Promise<boolean> {
   const start = Date.now()
   const reimport = process.argv.includes("--reimport")
 
@@ -120,14 +164,26 @@ async function loadFilesIntoMemory() {
   client.on("error", (err) => console.error(`Redis client error: ${err}`))
   await client.connect()
   try {
+    // Before anything can be flushed or migrated.
+    await assertRedisModules(client)
+
     const alreadyLoaded = (await client.exists(IMPORT_COMPLETE_KEY)) === 1
 
     if (alreadyLoaded && !reimport) {
       console.info(
         "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
       )
-      return
+      return true
     }
+
+    if (!reimport && (await client.exists(LEGACY_IMPORT_COMPLETE_KEY)) === 1) {
+      return await migrateLegacyEmbeddings(client, start)
+    }
+
+    // The flush below is destructive and only embeddings can rebuild what it
+    // removes, so find out now, while any old data still serves, that they can
+    // be generated. A missing, rotated or out-of-quota key throws here.
+    await generateEmbedding("ping")
 
     // flushDatabase also clears any stale completion marker.
     await flushDatabase()
@@ -154,6 +210,7 @@ async function loadFilesIntoMemory() {
       )
     }
 
+    let semanticIndexComplete = true
     const embeddingFailures = getEmbeddingFailureCount()
     if (embeddingFailures > 0) {
       // Leaving the marker unwritten keeps the next start from silently serving
@@ -162,10 +219,20 @@ async function loadFilesIntoMemory() {
         `WARNING: embeddings failed for ${embeddingFailures} chapter(s); semantic search would miss their verses, so the import is not marked complete and the next start will reimport.`,
       )
     } else {
-      await client.set(IMPORT_COMPLETE_KEY, "1")
+      try {
+        // A stored vector the index skipped raises no error of its own.
+        await verifyEmbeddingIndex(client)
+        await client.set(IMPORT_COMPLETE_KEY, "1")
+      } catch (error) {
+        semanticIndexComplete = false
+        console.warn(
+          `WARNING: the embedding index is incomplete, so the import is not marked complete and the next start will reimport: ${error}`,
+        )
+      }
     }
 
     console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
+    return semanticIndexComplete
   } finally {
     await client.quit()
   }

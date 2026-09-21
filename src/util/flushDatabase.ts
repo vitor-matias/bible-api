@@ -1,4 +1,5 @@
 import { createClient } from "redis"
+import { createEmbeddingIndex } from "./embeddingIndex"
 
 export const flushDatabase = async () => {
   const client = createClient({ url: process.env.DB_URL })
@@ -36,25 +37,7 @@ export const flushDatabase = async () => {
       },
     )
 
-    // Hashes, not JSON: a vector is stored as its raw float32 bytes (see
-    // storeChapter). The "key" field is only returned by queries, never
-    // searched, so it stays out of the schema.
-    await client.ft.create(
-      "idx:verseEmbeddings",
-      {
-        embedding: {
-          type: "VECTOR",
-          ALGORITHM: "HNSW",
-          TYPE: "FLOAT32",
-          DIM: 1536, // Dimension for text-embedding-3-small
-          DISTANCE_METRIC: "COSINE",
-        },
-      },
-      {
-        ON: "HASH",
-        PREFIX: "embedding:",
-      },
-    )
+    await createEmbeddingIndex(client)
   } finally {
     await client.quit()
   }

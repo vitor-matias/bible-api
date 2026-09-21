@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { EMBEDDING_KEY_PREFIX } from "../../util/embeddingIndex"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { generateEmbeddings } from "../openai/embeddings"
@@ -199,10 +200,15 @@ export const storeChapter = async (
       for (let i = 0; i < versesData.length; i++) {
         const v = versesData[i].verseData
         if (embeddings[i] && embeddings[i].length > 0) {
-          multi.hSet(`embedding:${v.bookId}:${v.chapterNumber}:${v.number}`, {
-            key: verseKey(v.bookId, v.chapterNumber, v.number),
-            embedding: toFloat32Buffer(embeddings[i]),
-          })
+          // A vector of the wrong length throws here, so the chapter counts as
+          // an embedding failure instead of being stored unindexed.
+          multi.hSet(
+            `${EMBEDDING_KEY_PREFIX}${v.bookId}:${v.chapterNumber}:${v.number}`,
+            {
+              key: verseKey(v.bookId, v.chapterNumber, v.number),
+              embedding: toFloat32Buffer(embeddings[i]),
+            },
+          )
         }
       }
       await multi.exec()
