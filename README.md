@@ -65,10 +65,11 @@ startup and is not refreshed while the process runs.
 
 Render's Secret Files cannot hold the texts (1 MB in total, and file names must
 start with a letter). Keep the USFM files in a private git repository and let the
-build clone it, so they sit next to the code when the service runs. With GitLab:
+build clone it, so they sit next to the code when the service runs. This project
+uses the private GitLab at `git.crosswire.org`:
 
-1. Create a private GitLab project with the `.usfm` files, and a **deploy token**
-   for it (Settings, Repository, Deploy tokens) with the `read_repository` scope.
+1. In the texts project's Settings → Repository → Deploy tokens, create a token
+   with the `read_repository` scope.
 2. On the Render service, set `TEXTS_GIT_USER` and `TEXTS_GIT_TOKEN` to the
    token's username and value.
 3. Set the build command to the line below, and the start command to
@@ -76,15 +77,18 @@ build clone it, so they sit next to the code when the service runs. With GitLab:
    git keeps the token, so it is not left on the running service.
 
    ```bash
-   npm ci && npm run build && GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://${TEXTS_GIT_USER}:${TEXTS_GIT_TOKEN}@gitlab.com/<group>/<project>.git texts && rm -rf texts/.git
+   npm ci && npm run build && GIT_TERMINAL_PROMPT=0 git clone --depth 1 https://${TEXTS_GIT_USER}:${TEXTS_GIT_TOKEN}@git.crosswire.org/cyrille/portuguese-capuchine-translation.git texts && rm -rf texts/.git
    ```
 
-4. Set `PATH_TO_TEXTS=texts` (`texts/<folder>` if the files are in a subfolder).
-   With an empty database the service imports them itself on its first start. That
-   takes several minutes, reports `loading` meanwhile, and peaks near 330 MB of
-   memory, so a 512 MB instance is enough. Set the health check path only after
-   it has finished, because Render cancels a deploy whose health check has not
-   passed within 15 minutes.
+4. Set `PATH_TO_TEXTS=texts/usfm-notes-intro`. With an empty database the service
+   imports the texts itself on its first start. That takes several minutes,
+   reports `loading` meanwhile, and peaks near 330 MB of memory, so a 512 MB
+   instance is enough. Set the health check path only after it has finished,
+   because Render cancels a deploy whose health check has not passed within
+   15 minutes.
+
+   The clone only sees what is pushed to that repository, not a local checkout's
+   uncommitted changes.
 
 To load changed texts, redeploy so the build clones again, with `--reimport` added
 to the start command for that deploy (and removed afterwards, or every restart
