@@ -1,6 +1,7 @@
 import type { createClient } from "redis"
+import { setJson } from "../../util/jsonStore"
 import { normalizeText } from "../../util/normalizeText"
-import { getVerse } from "../verse/getVerse"
+import { getVerse, verseKey } from "../verse/getVerse"
 
 // Runs of ASCII whitespace collapse to one space, so a note that wraps
 // mid-sentence in the source reads as a single line. Non-breaking spaces are
@@ -161,11 +162,7 @@ export const storeVerse = async (
     }
   }
 
-  await client.json.set(
-    `verse:${bookId}:${chapterNumber}:${verseNumber}`,
-    "$",
-    verseData,
-  )
+  await setJson(client, verseKey(bookId, chapterNumber, verseNumber), verseData)
   return verseData
 }
 

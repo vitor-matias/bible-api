@@ -6,57 +6,9 @@ export const flushDatabase = async () => {
   await client.connect()
   try {
     // flushDb only clears the current logical DB, unlike flushAll which wipes
-    // every DB on the (possibly shared) Redis instance.
+    // every DB on the (possibly shared) Redis instance. There are no indexes to
+    // recreate afterwards: search runs in memory (see searchIndex.ts).
     await client.flushDb()
-
-    await client.ft.create(
-      "idx:verseText",
-      {
-        "$.text[*].text": {
-          type: "TEXT",
-          AS: "text",
-        },
-        "$.text[*].normalizedText": {
-          type: "TEXT",
-          AS: "normalizedText",
-        },
-        "$.searchId": {
-          type: "TEXT",
-          AS: "searchId",
-        },
-        "$.number": {
-          type: "NUMERIC",
-          AS: "number",
-        },
-      },
-      {
-        ON: "JSON",
-        PREFIX: "verse:",
-        LANGUAGE: "Portuguese",
-      },
-    )
-
-    await client.ft.create(
-      "idx:verseEmbeddings",
-      {
-        "$.key": {
-          type: "TEXT",
-          AS: "key",
-        },
-        "$.embedding": {
-          type: "VECTOR",
-          AS: "embedding",
-          ALGORITHM: "HNSW",
-          TYPE: "FLOAT32",
-          DIM: 1536, // Dimension for text-embedding-3-small
-          DISTANCE_METRIC: "COSINE",
-        },
-      },
-      {
-        ON: "JSON",
-        PREFIX: "embedding:",
-      },
-    )
   } finally {
     await client.quit()
   }

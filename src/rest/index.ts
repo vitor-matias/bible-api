@@ -1,10 +1,10 @@
 import type express from "express"
-import { createClient } from "redis"
 import { checkCache } from "../middleware/checkCache"
 import { fullBookRateLimit, searchRateLimit } from "../middleware/rateLimiter"
 import { validateBooksParams } from "../middleware/validateBooksParams"
 import { validateQueryParams } from "../middleware/validateQueryParams"
 import { validateSearchParams } from "../middleware/validateSearchParams"
+import { getClient } from "../util/sharedClient"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
@@ -13,28 +13,7 @@ import { searchVersesController } from "./search"
 import { getVerseController, getVersesController } from "./verses"
 
 export default (app: express.Express): void => {
-  // A single shared client is reused across requests. The "error" listener is
-  // required: without it, node-redis throws on connection loss and crashes the
-  // process. node-redis reconnects automatically and queues commands meanwhile.
-  let client: ReturnType<typeof createClient> | undefined
-  // Concurrent requests arriving before the socket is open share one
-  // handshake; calling connect() twice on the same client throws.
-  let connecting: Promise<unknown> | undefined
-
-  const getClient = async () => {
-    if (!client) {
-      client = createClient({ url: process.env.DB_URL })
-      client.on("error", (err) => console.error(`Redis client error: ${err}`))
-    }
-    if (!client.isOpen) {
-      connecting ??= client.connect().finally(() => {
-        connecting = undefined
-      })
-      await connecting
-    }
-    return client
-  }
-
+  // Every request uses the one shared connection (see sharedClient.ts).
   app.use(async (_req, res, next) => {
     try {
       res.locals.client = await getClient()
@@ -60,7 +39,7 @@ export default (app: express.Express): void => {
   // Deliberately NOT cached: the cache keys on the full URL, and start/end are
   // free-form, so every (start, end) pair of every chapter would mint its own
   // entry — tens of millions of keys against the bound the validators exist to
-  // keep. The range is served from one JSON.MGET instead.
+  // keep. The range is served from one MGET instead.
   app.get(
     "/v1/:book/:chapter/:startVerse/:endVerse",
     noQueryParams,

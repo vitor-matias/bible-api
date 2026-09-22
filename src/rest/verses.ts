@@ -1,5 +1,6 @@
 import type { Request, Response } from "express"
 import { getVerse, verseKey } from "../services/verse/getVerse"
+import { mGetJson } from "../util/jsonStore"
 import { parseNumericParam } from "../util/parseParams"
 
 const MAX_VERSE_RANGE = 200
@@ -41,17 +42,16 @@ export const getVersesController = async (req: Request, res: Response) => {
       })
     }
 
-    // A single JSON.MGET for the whole span, so a range of absent verses costs
-    // one command rather than one per verse.
+    // A single MGET for the whole span, so a range of absent verses costs one
+    // command rather than one per verse.
     const keys = Array.from({ length: lastVerse - firstVerse + 1 }, (_, i) =>
       verseKey(book, chapterNumber, firstVerse + i),
     )
-    const results = await client.json.mGet(keys, "$")
+    const results = await mGetJson<Verse>(client, keys)
 
     // Keep only the leading run of existing verses, as before
     const verseData: Verse[] = []
-    for (const doc of results) {
-      const verse = (doc as unknown as Verse[] | null)?.[0]
+    for (const verse of results) {
       if (!verse) {
         break
       }
