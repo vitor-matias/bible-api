@@ -215,19 +215,27 @@ export const embedAndStoreVerses = async (
 ): Promise<void> => {
   const embeddings = await generateEmbeddings(versesData.map((v) => v.text))
 
+  // generateEmbeddings leaves [] for any entry the API response lacked. Writing
+  // the rest would count the chapter as embedded while some verses have no
+  // vector, so treat a partial response as a failure before writing anything.
+  const missing = versesData.filter((_, i) => !embeddings[i]?.length).length
+  if (missing > 0) {
+    throw new Error(
+      `Embedding response was missing vectors for ${missing} of ${versesData.length} verses`,
+    )
+  }
+
   const multi = client.multi()
   for (let i = 0; i < versesData.length; i++) {
     const v = versesData[i].verseData
-    if (embeddings[i] && embeddings[i].length > 0) {
-      multi.json.set(
-        `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
-        "$",
-        {
-          key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
-          embedding: embeddings[i],
-        },
-      )
-    }
+    multi.json.set(
+      `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
+      "$",
+      {
+        key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
+        embedding: embeddings[i],
+      },
+    )
   }
   await multi.exec()
 }
