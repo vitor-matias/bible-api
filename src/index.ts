@@ -160,7 +160,7 @@ async function loadFilesIntoMemory(): Promise<number> {
     // A chapter whose embedding call failed is recorded in Redis rather than
     // blocking the marker: the primary data is complete, and a later start
     // re-embeds just those chapters instead of flushing and reimporting
-    // everything. A systemic failure aborts the import before this point.
+    // everything.
     await client.set(IMPORT_COMPLETE_KEY, "1")
 
     const missingEmbeddings = await retryFailedEmbeddings(client)
