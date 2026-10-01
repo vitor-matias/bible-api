@@ -7,8 +7,8 @@ import { createClient } from "redis"
 import setEndpoints from "./rest"
 import { generateEmbedding } from "./services/openai/embeddings"
 import { readBook } from "./services/usfmImportService/readBook"
+import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
 import { storeBook } from "./services/usfmImportService/storeBook"
-import { getEmbeddingFailureCount } from "./services/usfmImportService/storeChapter"
 import { verifyEmbeddingIndex } from "./util/embeddingIndex"
 import { flushDatabase } from "./util/flushDatabase"
 import {
@@ -23,6 +23,7 @@ require("dotenv").config()
 
 // Written only after a full import finishes, so a crash mid-import leaves the
 // marker absent and the next start reimports instead of serving partial data.
+// Chapters whose embeddings failed do not hold it back; see loadFilesIntoMemory.
 // The suffix is part of the storage format: bump it when the layout changes so
 // existing databases reimport instead of being read with the wrong assumptions.
 const IMPORT_COMPLETE_KEY = "importComplete:v3"
@@ -102,11 +103,7 @@ loadFilesIntoMemory()
     // Chapters whose embeddings failed are absent from the vector index, so
     // semantic search would silently answer from a partial corpus. Serve the
     // primary data, but mark the process degraded and refuse semantic search.
-    setImportState(
-      semanticIndexComplete && getEmbeddingFailureCount() === 0
-        ? "ready"
-        : "degraded",
-    )
+    setImportState(semanticIndexComplete ? "ready" : "degraded")
   })
   .catch((error) => {
     setImportState("failed")
@@ -137,7 +134,7 @@ async function loadFilesIntoMemory(): Promise<boolean> {
       console.info(
         "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
       )
-      return true
+      return (await retryFailedEmbeddings(client)) === 0
     }
 
     // The flush below is destructive and only embeddings can rebuild what it
@@ -156,10 +153,11 @@ async function loadFilesIntoMemory(): Promise<boolean> {
         "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check OPENAI_API_KEY and restart with --reimport to retry.",
         error,
       )
-      return true
+      return (await retryFailedEmbeddings(client)) === 0
     }
 
-    // flushDatabase also clears any stale completion marker.
+    // flushDatabase also clears any stale completion marker and the record of
+    // chapters whose embeddings failed.
     await flushDatabase()
 
     const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
@@ -184,21 +182,28 @@ async function loadFilesIntoMemory(): Promise<boolean> {
       )
     }
 
-    let semanticIndexComplete = true
-    const embeddingFailures = getEmbeddingFailureCount()
-    if (embeddingFailures > 0) {
-      // Leaving the marker unwritten keeps the next start from silently serving
-      // a corpus whose semantic index is permanently missing these chapters.
+    // A chapter whose embedding call failed is recorded in Redis rather than
+    // blocking the marker: the primary data is complete, and a later start
+    // re-embeds just those chapters instead of flushing and reimporting
+    // everything.
+    await client.set(IMPORT_COMPLETE_KEY, "1")
+
+    const missingEmbeddings = await retryFailedEmbeddings(client)
+    let semanticIndexComplete = missingEmbeddings === 0
+    if (missingEmbeddings > 0) {
       console.warn(
-        `WARNING: embeddings failed for ${embeddingFailures} chapter(s); semantic search would miss their verses, so the import is not marked complete and the next start will reimport.`,
+        `WARNING: embeddings are missing for ${missingEmbeddings} chapter(s); semantic search is disabled until the next start re-embeds them.`,
       )
     } else {
       try {
         // A stored vector the index skipped raises no error of its own.
         await verifyEmbeddingIndex(client)
-        await client.set(IMPORT_COMPLETE_KEY, "1")
       } catch (error) {
         semanticIndexComplete = false
+        // Retrying chapters cannot repair a vector the index skipped, so drop
+        // the marker: the next start reimports instead of serving a partial
+        // index as complete.
+        await client.del(IMPORT_COMPLETE_KEY)
         console.warn(
           `WARNING: the embedding index is incomplete, so the import is not marked complete and the next start will reimport: ${error}`,
         )

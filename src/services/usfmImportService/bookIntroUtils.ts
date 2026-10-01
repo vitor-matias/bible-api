@@ -1,3 +1,17 @@
+// Intro paragraph variants (indented, quoted, poetic, list-like, closing...)
+// that all read as running text; the API has no finer-grained element for them.
+const INTRO_PARAGRAPH_BASES = new Set([
+  "ip",
+  "im",
+  "imi",
+  "ipi",
+  "ipq",
+  "imq",
+  "ipr",
+  "iq",
+  "iex",
+])
+
 /**
  * Base USFM tags (without their level suffix) that represent book introduction
  * content. usfm-js reports the numbered forms it finds in the file — `\imt1`,
@@ -6,7 +20,8 @@
  */
 const INTRO_TAG_BASES = new Set([
   "imt",
-  "ip",
+  "imte",
+  ...INTRO_PARAGRAPH_BASES,
   "is",
   "io",
   "tr",
@@ -58,13 +73,15 @@ const pushElement = (
   { base, level }: IntroTag,
   content: string,
 ): void => {
+  if (INTRO_PARAGRAPH_BASES.has(base)) {
+    elements.push({ type: "introParagraph", text: content })
+    return
+  }
+
   switch (base) {
     case "imt":
+    case "imte":
       elements.push({ type: "introTitle", level, text: content })
-      break
-
-    case "ip":
-      elements.push({ type: "introParagraph", text: content })
       break
 
     case "is":
@@ -102,13 +119,30 @@ type TaggedHeader = {
   tag: IntroTag
 }
 
+// Markers that start with "i" but carry no introduction content to store
+// (identification, encoding, end-of-intro, blank line).
+const NON_CONTENT_I_TAGS = new Set(["id", "ide", "ie", "ib"])
+
+/** True for an intro-looking `\i*` marker the importer does not represent. */
+const isUnhandledIntroTag = (tag: string): boolean => {
+  const match = /^(i[a-z]+)\d*$/.exec(tag)
+
+  return match !== null && !NON_CONTENT_I_TAGS.has(match[1])
+}
+
 /** Keeps only the headers that carry introduction content, with their parsed tag. */
 const collectIntroHeaders = (headers: USFMHeader[]): TaggedHeader[] => {
   const introHeaders: TaggedHeader[] = []
 
   for (const header of headers) {
     const tag = parseIntroTag(header.tag)
-    if (tag) introHeaders.push({ header, tag })
+    if (tag) {
+      introHeaders.push({ header, tag })
+    } else if (isUnhandledIntroTag(header.tag)) {
+      console.warn(
+        `bookIntroUtils: ignoring unsupported intro marker \\${header.tag}`,
+      )
+    }
   }
 
   return introHeaders

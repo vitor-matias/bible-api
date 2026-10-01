@@ -57,19 +57,21 @@ export const getChapter = async (
         ),
   ])
 
+  // Indexed by verse number, as the endpoint has always returned it: verses[n]
+  // is verse n, and a gap (or a missing verse 0) is a hole serialized as null.
   const verses: Verse[] = []
+  let found = 0
   for (const doc of versesData) {
     const verse = (doc as unknown as Verse[] | null)?.[0]
     if (verse) {
-      verses.push(verse)
+      verses[verse.number] = verse
+      found++
     }
   }
 
-  if (verses.length === 0) {
+  if (found === 0) {
     throw new NotFoundError()
   }
-
-  verses.sort((a, b) => a.number - b.number)
 
   return { bookId, number: chapterNumber, verses, title }
 }

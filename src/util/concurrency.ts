@@ -16,12 +16,21 @@ export const mapWithConcurrency = async <T, R>(
 
   const results = new Array<R>(items.length)
   let next = 0
+  // Promise.all rejects on the first error but leaves the other workers
+  // running; without this flag they would keep issuing work for a result that
+  // is already discarded.
+  let failed = false
 
   const worker = async () => {
-    while (next < items.length) {
+    while (!failed && next < items.length) {
       const index = next
       next++
-      results[index] = await mapper(items[index], index)
+      try {
+        results[index] = await mapper(items[index], index)
+      } catch (error) {
+        failed = true
+        throw error
+      }
     }
   }
 
