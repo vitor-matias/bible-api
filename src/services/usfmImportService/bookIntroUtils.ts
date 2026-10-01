@@ -84,17 +84,22 @@ const cleanIntroText = (content: string): IntroText => {
  * Parses a table row content string like "\\th1 Key: \\th2 Value"
  * into an array of cell values: ["Key:", "Value"]
  *
- * Rows may use header cells (\th, \thr) or regular cells (\tc, \tcr).
+ * Rows may use header cells (\th, \thr, \thc) or regular cells (\tc, \tcr,
+ * \tcc), each numbered by column and optionally spanning several (\tc1-2).
  */
 const parseTableRow = (content: string): string[] => {
-  return (
-    content
-      .split(/\\t(?:hr|cr|h|c)\d+\s*/)
-      // A cell is a plain string, so it has nowhere to keep a note; only its
-      // prose survives.
-      .map((cell) => cleanIntroText(cell).text)
-      .filter((cell) => cell.length > 0)
-  )
+  // The first segment is whatever precedes the first cell marker. Empty cells
+  // after it are kept: dropping them would shift every later cell into the
+  // wrong column.
+  // usfm-js writes a span marker back with a space inside it (`\tc3-4` comes
+  // out as `\tc3 -4`), so the span end may follow whitespace.
+  const [leading, ...cells] = content.split(/\\t[hc][rc]?\d+(?:\s*-\d+)?\s*/)
+  // A cell is a plain string, so it has nowhere to keep a note; only its
+  // prose survives.
+  const row = cells.map((cell) => cleanIntroText(cell).text)
+  const lead = cleanIntroText(leading).text
+
+  return lead ? [lead, ...row] : row
 }
 
 /**
