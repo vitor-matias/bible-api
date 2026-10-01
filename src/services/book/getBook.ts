@@ -67,9 +67,9 @@ export const getBook = async (
     (chapter): chapter is Chapter => chapter != null,
   )
 
-  // Keep the count consistent with what is actually returned; otherwise a book
-  // with an absent chapter advertises more chapters than the array holds.
-  book.chapterCount = book.chapters.length
+  // chapterCount stays as stored. Chapters keep their own numbers, so with a gap
+  // chapters.length would stop short of the last one, and the count would
+  // disagree with the titles-only response for the same book.
 
   return book
 }

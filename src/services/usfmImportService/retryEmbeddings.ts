@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { NotFoundError } from "../../util/errors"
 import { getChapter } from "../chapter/getChapter"
 import {
   collectForEmbedding,
@@ -12,7 +13,7 @@ import {
 const MAX_CONSECUTIVE_RETRY_FAILURES = 3
 
 // Re-embeds one recorded chapter, reading its verses back from Redis. Returns
-// false (after logging) when any step fails.
+// false (after logging) when any step fails transiently.
 const retryChapter = async (
   client: ReturnType<typeof createClient>,
   member: string,
@@ -34,6 +35,16 @@ const retryChapter = async (
     await client.sRem(EMBEDDING_FAILURES_KEY, member)
     return true
   } catch (error) {
+    // A chapter that cannot be read back can never be re-embedded, and left in
+    // the set it would keep semantic search disabled until a full reimport.
+    // It has no readable verses for semantic search to miss, so drop it.
+    if (error instanceof NotFoundError) {
+      console.warn(
+        `Chapter ${member} cannot be read back; dropping it from the embedding retry set.`,
+      )
+      await client.sRem(EMBEDDING_FAILURES_KEY, member)
+      return true
+    }
     console.error(`Retrying embeddings for ${member} failed:`, error)
     return false
   }

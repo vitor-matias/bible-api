@@ -10,6 +10,7 @@ import {
 import { importBible } from "./services/usfmImportService/importBible"
 import { isDataImported } from "./services/usfmImportService/importMarker"
 import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
+import { EMBEDDING_FAILURES_KEY } from "./services/usfmImportService/storeChapter"
 import { buildHealth, pingDatabase } from "./util/health"
 import {
   getImportState,
@@ -126,33 +127,39 @@ const waitForImport = async (
   }
 }
 
-// Makes sure the Bible is in the database, then loads what search needs into
-// memory. Skips re-importing (and the destructive flush + costly embedding
-// regeneration) when data is already present, unless the process is started
-// with --reimport. Resolves to the state the API should report.
-async function loadData(): Promise<ImportState> {
-  const reimport = process.argv.includes("--reimport")
-
+// A plain function declaration, not `const`: loadData() below is invoked at
+// the top of the module, synchronously, before a `const` here would be
+// initialized (loadData itself is a hoisted function declaration, so calling
+// it early is fine; a same-scope `const` it immediately depends on is not).
+function createDbClient() {
   const client = createClient({
     url: process.env.DB_URL,
     socket: { connectTimeout: 100000 },
   })
   client.on("error", (err) => console.error(`Redis client error: ${err}`))
+  return client
+}
+
+// Makes sure the Bible is in the database, then loads what search needs into
+// memory. Skips re-importing (and the destructive flush + costly embedding
+// regeneration) when data is already present, unless the process is started
+// with --reimport. Resolves to the state the API should report right away: a
+// chapter still recorded as failed does not hold this up (see
+// retryEmbeddingsInBackground below) — re-embedding can mean one OpenAI call
+// per failed chapter, and an outage during the import can leave hundreds of
+// them, which would otherwise be minutes of 503s on every single start.
+async function loadData(): Promise<ImportState> {
+  const reimport = process.argv.includes("--reimport")
+
+  const client = createDbClient()
   await client.connect()
 
   try {
-    // Chapters whose embeddings failed are recorded in Redis rather than held
-    // in memory (see retryFailedEmbeddings), so every start retries them, not
-    // just the one that hit the failure. They are absent from the vector
-    // index meanwhile, so semantic search is disabled while any remain.
-    let embeddingFailures = 0
-
     if (reimport || !(await isDataImported(client))) {
       const textsPath = process.env.PATH_TO_TEXTS
 
       if (textsPath) {
-        embeddingFailures = (await importBible(client, textsPath))
-          .embeddingFailures
+        await importBible(client, textsPath)
       } else if (reimport) {
         throw new Error("--reimport needs PATH_TO_TEXTS to read the texts from")
       } else {
@@ -163,13 +170,11 @@ async function loadData(): Promise<ImportState> {
           "No Bible data in the database and PATH_TO_TEXTS is not set, so this process cannot import it. Run `npm run import` against this database; the data is loaded here as soon as it appears.",
         )
         await waitForImport(client)
-        embeddingFailures = await retryFailedEmbeddings(client)
       }
     } else {
       console.info(
         "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
       )
-      embeddingFailures = await retryFailedEmbeddings(client)
     }
 
     const stats = await loadSearchIndex(client)
@@ -187,7 +192,49 @@ async function loadData(): Promise<ImportState> {
       )
     }
 
-    return stateAfterLoad(embeddingFailures, stats)
+    // Chapters whose embeddings failed are recorded in Redis rather than held
+    // in memory, so every start sees them, not just the one that hit the
+    // failure — but only the background retry below acts on it; serving the
+    // primary data never waits for that.
+    const embeddingFailures = await client.sCard(EMBEDDING_FAILURES_KEY)
+    const state = stateAfterLoad(embeddingFailures, stats)
+
+    if (state === "degraded" && embeddingFailures > 0) {
+      // Fire-and-forget: it handles its own errors and never blocks the state
+      // this function is about to return.
+      void retryEmbeddingsInBackground()
+    }
+
+    return state
+  } finally {
+    await client.quit()
+  }
+}
+
+// Re-embeds the chapters recorded as failed, outside the startup path, and
+// reloads the search index so the new vectors become searchable, lifting the
+// process out of "degraded" once none remain. Never throws: a start that is
+// still degraded afterwards is retried again on the next restart.
+async function retryEmbeddingsInBackground(): Promise<void> {
+  const client = createDbClient()
+  await client.connect()
+
+  try {
+    const missingEmbeddings = await retryFailedEmbeddings(client)
+    if (missingEmbeddings > 0) {
+      console.warn(
+        `WARNING: embeddings are still missing for ${missingEmbeddings} chapter(s); semantic search misses their verses until a later retry.`,
+      )
+      return
+    }
+
+    const stats = await loadSearchIndex(client)
+    console.info(
+      `Search index reloaded after retrying embeddings: ${stats.verses} verses, ${stats.vectors} vectors.`,
+    )
+    setImportState(stateAfterLoad(0, stats))
+  } catch (error) {
+    console.error("Background re-embedding failed:", error)
   } finally {
     await client.quit()
   }
