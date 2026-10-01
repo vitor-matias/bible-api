@@ -124,8 +124,9 @@ const IMPORT_POLL_MS = 15_000
 const waitForImport = async (
   client: ReturnType<typeof createClient>,
 ): Promise<void> => {
-  while (!(await isDataImported(client))) {
-    // NOSONAR
+  while (
+    !(await isDataImported(client)) // NOSONAR
+  ) {
     await new Promise((resolve) => setTimeout(resolve, IMPORT_POLL_MS)) // NOSONAR
   }
 }
