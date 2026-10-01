@@ -124,8 +124,11 @@ type TaggedHeader = {
 const NON_CONTENT_I_TAGS = new Set(["id", "ide", "ie", "ib"])
 
 /** True for an intro-looking `\i*` marker the importer does not represent. */
-const isUnhandledIntroTag = (tag: string): boolean =>
-  /^i[a-z]+\d*$/.test(tag) && !NON_CONTENT_I_TAGS.has(tag.replace(/\d+$/, ""))
+const isUnhandledIntroTag = (tag: string): boolean => {
+  const match = /^(i[a-z]+)\d*$/.exec(tag)
+
+  return match !== null && !NON_CONTENT_I_TAGS.has(match[1])
+}
 
 /** Keeps only the headers that carry introduction content, with their parsed tag. */
 const collectIntroHeaders = (headers: USFMHeader[]): TaggedHeader[] => {
