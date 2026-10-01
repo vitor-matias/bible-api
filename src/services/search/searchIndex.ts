@@ -252,10 +252,11 @@ const loadTextEntries = async (client: Client): Promise<TextEntry[]> => {
   const entries: TextEntry[] = []
 
   // In batches, so the parsed documents (megabytes of JSON) never all sit in
-  // memory at once; only the normalized text of each verse is kept.
+  // memory at once; only the normalized text of each verse is kept. Awaiting
+  // each batch in turn is what keeps them from all being in flight together.
   for (let start = 0; start < keys.length; start += BATCH_SIZE) {
     const batch = keys.slice(start, start + BATCH_SIZE)
-    const verses = await mGetJson<Verse>(client, batch)
+    const verses = await mGetJson<Verse>(client, batch) // NOSONAR
 
     verses.forEach((verse, position) => {
       // Verse 0 is the pseudo-verse holding chapter headings, not a verse.
@@ -285,9 +286,12 @@ const loadVectorIndex = async (client: Client): Promise<VectorIndex> => {
   // Vectors are binary, so they must be read as Buffers rather than as strings.
   const binary = client.withTypeMapping({ [RESP_TYPES.BLOB_STRING]: Buffer })
 
+  // One batch awaited at a time, same as loadTextEntries above, and for the
+  // same reason: they all land in the one matrix allocated above, not a
+  // per-batch array that concurrent batches could grow unpredictably.
   for (let start = 0; start < storedKeys.length; start += BATCH_SIZE) {
     const batch = storedKeys.slice(start, start + BATCH_SIZE)
-    const buffers = (await binary.mGet(batch)) as (Buffer | null)[]
+    const buffers = (await binary.mGet(batch)) as (Buffer | null)[] // NOSONAR
 
     buffers.forEach((buffer, position) => {
       if (

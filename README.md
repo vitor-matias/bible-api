@@ -34,7 +34,7 @@ npm start              # compiles, then runs
 | `OPENAI_API_KEY` | Embeddings: every verse at import, every query at search time |
 | `EMBEDDING_DIMENSIONS` | Vector size, default `512` (8 to 3072). Changing it needs a reimport |
 | `PORT` | Default `3000` |
-| `TRUST_PROXY` | Set behind a proxy (`true`, a hop count, or an address) so rate limits see real client IPs |
+| `TRUST_PROXY` | Set behind a proxy (a hop count, e.g. `1`, or an address) so rate limits see real client IPs. `true` is rejected: it would trust every X-Forwarded-For entry |
 | `CORS_ORIGIN` | Comma-separated allowed origins; open to all if unset |
 
 ## Loading the data
@@ -153,5 +153,5 @@ To run everything locally without OpenAI, start the stub, then start the API and
 the import with `OPENAI_API_KEY=stub OPENAI_BASE_URL=http://localhost:4011/v1`.
 The stub returns random vectors, so semantic results are meaningless, but
 everything else is real. `scripts/bench.mjs` needs the API started with
-`TRUST_PROXY=true`, because it sends a different client IP with every request,
+`TRUST_PROXY=1`, because it sends a different client IP with every request,
 and only talks to an API on this machine (an `http://localhost:…` base URL).

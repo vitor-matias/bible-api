@@ -56,11 +56,14 @@ async function run(name, paths, concurrency) {
   let errors = 0
   let next = 0
   const t0 = performance.now()
+  // `concurrency` workers, each pulling the next path off the shared queue and
+  // awaiting it before pulling the next: that queue, not an unawaited burst,
+  // is what bounds how many requests are in flight at once.
   await Promise.all(
     Array.from({ length: concurrency }, async () => {
       while (next < paths.length) {
         const path = paths[next++]
-        const r = await once(path)
+        const r = await once(path) // NOSONAR
         if (r.status === 200) latencies.push(r.ms)
         else errors++
       }
@@ -92,12 +95,16 @@ const chapters = []
 for (const b of books)
   for (let n = 1; n <= b.chapterCount; n++) chapters.push(`/v1/${b.id}/${n}`)
 const words = new Set()
-for (const path of [0, 1, 2, 3, 4, 5, 1000, 1100, 1200].map(
-  (i) => chapters[i],
-)) {
-  const chapter = await (
-    await fetch(base + path, { headers: headers() })
-  ).json()
+// Independent requests for a fixed set of sample chapters, so fetching them
+// concurrently changes nothing about the result.
+const sampleChapters = await Promise.all(
+  [0, 1, 2, 3, 4, 5, 1000, 1100, 1200]
+    .map((i) => chapters[i])
+    .map((path) =>
+      fetch(base + path, { headers: headers() }).then((r) => r.json()),
+    ),
+)
+for (const chapter of sampleChapters) {
   if (!Array.isArray(chapter.verses)) continue
   for (const v of chapter.verses)
     for (const t of v.text) {
@@ -110,9 +117,12 @@ console.log(
   `# ${label}: ${chapters.length} chapters, ${vocabulary.length} distinct words available`,
 )
 
-// Warm the process (JIT, connections) with requests that are not measured.
-for (const w of vocabulary.slice(0, 5))
-  await once(`/v1/search?text=${w}&limit=10&page=1`)
+// Warm the process (JIT, connections) with requests that are not measured, one
+// at a time: a burst here would warm up for concurrency the runs below don't
+// all use.
+for (const w of vocabulary.slice(0, 5)) {
+  await once(`/v1/search?text=${w}&limit=10&page=1`) // NOSONAR
+}
 
 await run("chapter, cached", new Array(400).fill("/v1/gen/1"), 1)
 await run("chapter, cached", new Array(1000).fill("/v1/gen/1"), 16)

@@ -36,10 +36,13 @@ export const importBible = async (
 
   console.log(textsPath)
 
+  // One book at a time: storeBook embeds a chapter's verses with its own
+  // OpenAI call, and running every book's chapters concurrently would fire
+  // the whole corpus at OpenAI at once instead of respecting its rate limits.
   for (const file of files) {
     console.log(file)
-    const bibleData = await readBook(path.join(textsPath, file))
-    await storeBook(client, bibleData, file)
+    const bibleData = await readBook(path.join(textsPath, file)) // NOSONAR
+    await storeBook(client, bibleData, file) // NOSONAR
   }
 
   // The primary (verse) data is complete regardless of embedding failures, so

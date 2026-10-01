@@ -119,11 +119,14 @@ loadData()
 // How often a process with no texts of its own looks for an import to finish.
 const IMPORT_POLL_MS = 15_000
 
+// A poll loop: each check depends on the previous wait, so there is nothing
+// here to run concurrently.
 const waitForImport = async (
   client: ReturnType<typeof createClient>,
 ): Promise<void> => {
   while (!(await isDataImported(client))) {
-    await new Promise((resolve) => setTimeout(resolve, IMPORT_POLL_MS))
+    // NOSONAR
+    await new Promise((resolve) => setTimeout(resolve, IMPORT_POLL_MS)) // NOSONAR
   }
 }
 
