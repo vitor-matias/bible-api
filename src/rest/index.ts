@@ -15,7 +15,7 @@ import { getVerseController, getVersesController } from "./verses"
 export default (app: express.Express): void => {
   // A single shared client is reused across requests. The "error" listener is
   // required: without it, node-redis throws on connection loss and crashes the
-  // process. node-redis reconnects automatically and queues commands meanwhile.
+  // process. node-redis reconnects automatically; commands fail fast meanwhile.
   let client: ReturnType<typeof createClient> | undefined
   // Concurrent requests arriving before the socket is open share one
   // handshake; calling connect() twice on the same client throws.
@@ -23,7 +23,14 @@ export default (app: express.Express): void => {
 
   const getClient = async () => {
     if (!client) {
-      client = createClient({ url: process.env.DB_URL })
+      // Without a bound, node-redis queues every command issued during an
+      // outage, so a long one lets requests pile up until the process runs out
+      // of memory. Failing fast turns them into 500s instead; reconnection
+      // still happens in the background.
+      client = createClient({
+        url: process.env.DB_URL,
+        disableOfflineQueue: true,
+      })
       client.on("error", (err) => console.error(`Redis client error: ${err}`))
     }
     if (!client.isOpen) {

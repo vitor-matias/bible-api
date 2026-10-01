@@ -32,8 +32,9 @@ const app = express()
 app.disable("x-powered-by")
 const port = process.env.PORT || "3000"
 
-// Set TRUST_PROXY when running behind a reverse proxy — "true", a hop
-// count (e.g. "1"), or a proxy-addr value ("loopback", an IP, a CIDR) —
+// Set TRUST_PROXY when running behind a reverse proxy — a hop count (e.g.
+// "1") or a proxy-addr value ("loopback", an IP, a CIDR); "true" is rejected
+// because it trusts every X-Forwarded-For entry —
 // otherwise rate limiting keys on the proxy address instead of the client.
 // parseTrustProxy rejects values Express would misread; see its comment.
 const trustProxy = process.env.TRUST_PROXY
@@ -156,10 +157,6 @@ async function loadFilesIntoMemory(): Promise<boolean> {
       return (await retryFailedEmbeddings(client)) === 0
     }
 
-    // flushDatabase also clears any stale completion marker and the record of
-    // chapters whose embeddings failed.
-    await flushDatabase()
-
     const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
     console.log(filePath)
     // readdirSync order is filesystem-dependent. Sorting keeps book numbering
@@ -169,6 +166,24 @@ async function loadFilesIntoMemory(): Promise<boolean> {
       .readdirSync(filePath)
       .filter((file) => file.endsWith(".usfm"))
       .sort()
+
+    // An empty or wrongly mounted directory must not be "imported": the flush
+    // below would wipe the data and the completion marker would make every
+    // later start skip the import even after the mount is fixed.
+    if (files.length === 0) {
+      const message = `No .usfm files found in PATH_TO_TEXTS (${filePath})`
+      if (!alreadyLoaded) {
+        throw new Error(message)
+      }
+      console.error(
+        `ERROR: --reimport aborted: ${message}; the existing data is left in place and served.`,
+      )
+      return (await retryFailedEmbeddings(client)) === 0
+    }
+
+    // flushDatabase also clears any stale completion marker and the record of
+    // chapters whose embeddings failed.
+    await flushDatabase()
 
     const chunkSize = 1
     for (let i = 0; i < files.length; i += chunkSize) {
