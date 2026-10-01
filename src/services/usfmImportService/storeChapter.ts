@@ -3,12 +3,6 @@ import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { generateEmbeddings } from "../openai/embeddings"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
-// Repeated failures indicate a systemic problem (bad OPENAI_API_KEY, outage)
-// rather than a transient one, so the import aborts instead of silently
-// producing a corpus without embeddings.
-const MAX_CONSECUTIVE_EMBEDDING_FAILURES = 3
-let consecutiveEmbeddingFailures = 0
-
 // Chapters whose embeddings failed transiently, as "bookId:chapter" members.
 // Persisted in Redis (and cleared by flushDatabase with everything else) so a
 // later start can re-embed just these chapters instead of reimporting the
@@ -188,21 +182,15 @@ export const storeChapter = async (
     )
     try {
       await embedAndStoreVerses(client, versesData)
-      consecutiveEmbeddingFailures = 0
     } catch (error) {
-      consecutiveEmbeddingFailures++
+      // Never stop the import over embeddings: the primary data matters more.
+      // The chapter is recorded and re-embedded on a later start, and semantic
+      // search stays disabled until then.
       console.error(
         `Failed to generate embeddings for chapter ${chapterNumber}:`,
         error,
       )
       await client.sAdd(EMBEDDING_FAILURES_KEY, `${bookCode}:${chapterNumber}`)
-      // A missing/invalid API key or an OpenAI outage would otherwise fail
-      // every chapter one by one, leaving the whole corpus without embeddings.
-      if (consecutiveEmbeddingFailures >= MAX_CONSECUTIVE_EMBEDDING_FAILURES) {
-        throw new Error(
-          `Embedding generation failed for ${consecutiveEmbeddingFailures} chapters in a row — aborting import. Last error: ${error}`,
-        )
-      }
     }
   }
 }
