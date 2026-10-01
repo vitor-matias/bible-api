@@ -14,10 +14,8 @@ import { flushDatabase } from "./util/flushDatabase"
 import {
   getImportState,
   isDataAvailable,
-  setDegraded,
   setImportState,
 } from "./util/importState"
-import { migrateEmbeddingsToHashes } from "./util/migrateEmbeddings"
 import { assertRedisModules } from "./util/requireRedisModules"
 import { parseTrustProxy } from "./util/trustProxy"
 
@@ -26,14 +24,8 @@ require("dotenv").config()
 // Written only after a full import finishes, so a crash mid-import leaves the
 // marker absent and the next start reimports instead of serving partial data.
 // The suffix is part of the storage format: bump it when the layout changes so
-// existing databases are migrated or reimported instead of being read with the
-// wrong assumptions.
+// existing databases reimport instead of being read with the wrong assumptions.
 const IMPORT_COMPLETE_KEY = "importComplete:v3"
-
-// v2 held complete Bible data and differed from v3 only in how embeddings are
-// stored, so those databases are converted in place rather than reimported.
-// The marker is left in place, which keeps a rollback to the v2 build working.
-const LEGACY_IMPORT_COMPLETE_KEY = "importComplete:v2"
 
 const app = express()
 app.disable("x-powered-by")
@@ -110,45 +102,16 @@ loadFilesIntoMemory()
     // Chapters whose embeddings failed are absent from the vector index, so
     // semantic search would silently answer from a partial corpus. Serve the
     // primary data, but mark the process degraded and refuse semantic search.
-    if (semanticIndexComplete && getEmbeddingFailureCount() === 0) {
-      setImportState("ready")
-    } else {
-      setDegraded("incomplete")
-    }
+    setImportState(
+      semanticIndexComplete && getEmbeddingFailureCount() === 0
+        ? "ready"
+        : "degraded",
+    )
   })
   .catch((error) => {
     setImportState("failed")
     console.error("Fatal startup error:", error)
   })
-
-// Converts a v2 database's embeddings in place. The books and verses are never
-// touched, so they are served while it runs; only semantic search waits.
-// Resolves to whether the semantic index ended up complete.
-async function migrateLegacyEmbeddings(
-  client: ReturnType<typeof createClient>,
-  start: number,
-): Promise<boolean> {
-  console.info(
-    "Converting v2 embeddings to hashes in place; semantic search is unavailable until it finishes.",
-  )
-  setDegraded("migrating")
-  try {
-    const converted = await migrateEmbeddingsToHashes(client)
-    await client.set(IMPORT_COMPLETE_KEY, "1")
-    console.log(
-      `converted ${converted} embeddings. took ${(Date.now() - start) / 1000}s`,
-    )
-    return true
-  } catch (error) {
-    // Nothing was lost and the conversion resumes where it stopped, so the
-    // next start retries instead of the data being treated as missing.
-    console.error(
-      "Embedding conversion failed; semantic search stays unavailable until the next start:",
-      error,
-    )
-    return false
-  }
-}
 
 // Loads the Bible data into Redis. Skips re-importing (and the destructive
 // flush + costly embedding regeneration) when data is already present, unless
@@ -165,12 +128,10 @@ async function loadFilesIntoMemory(): Promise<boolean> {
   client.on("error", (err) => console.error(`Redis client error: ${err}`))
   await client.connect()
   try {
-    // Before anything can be flushed or migrated.
+    // Before anything can be flushed.
     await assertRedisModules(client)
 
     const alreadyLoaded = (await client.exists(IMPORT_COMPLETE_KEY)) === 1
-    const legacyLoaded =
-      !alreadyLoaded && (await client.exists(LEGACY_IMPORT_COMPLETE_KEY)) === 1
 
     if (alreadyLoaded && !reimport) {
       console.info(
@@ -179,17 +140,13 @@ async function loadFilesIntoMemory(): Promise<boolean> {
       return true
     }
 
-    if (legacyLoaded && !reimport) {
-      return await migrateLegacyEmbeddings(client, start)
-    }
-
     // The flush below is destructive and only embeddings can rebuild what it
     // removes, so find out first, while nothing has been touched, that they
     // can be generated. A missing, rotated or out-of-quota key throws here.
     try {
       await generateEmbedding("ping")
     } catch (error) {
-      if (!alreadyLoaded && !legacyLoaded) {
+      if (!alreadyLoaded) {
         throw error
       }
       // Complete data is already stored, so refusing the reimport costs
@@ -199,7 +156,7 @@ async function loadFilesIntoMemory(): Promise<boolean> {
         "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check OPENAI_API_KEY and restart with --reimport to retry.",
         error,
       )
-      return alreadyLoaded || (await migrateLegacyEmbeddings(client, start))
+      return true
     }
 
     // flushDatabase also clears any stale completion marker.

@@ -4,10 +4,7 @@ import {
   KNN_MAX_RESULTS,
   semanticSearchVerses,
 } from "../services/search/semanticSearch"
-import {
-  getDegradedReason,
-  isSemanticSearchAvailable,
-} from "../util/importState"
+import { isSemanticSearchAvailable } from "../util/importState"
 import { normalizeText } from "../util/normalizeText"
 
 export const searchVersesController = async (req: Request, res: Response) => {
@@ -25,14 +22,12 @@ export const searchVersesController = async (req: Request, res: Response) => {
   const limitNumber = Number.parseInt(limit as string, 10)
 
   if (semantic === "true") {
-    // The vector index is still being converted, or covers only part of the
-    // corpus. Answering anyway would look like a complete result set.
+    // The vector index covers only part of the corpus (failed chapters, or
+    // vectors it skipped). Answering anyway would look like a complete result set.
     if (!isSemanticSearchAvailable()) {
       return res.status(503).json({
         error:
-          getDegradedReason() === "migrating"
-            ? "Semantic search is unavailable while stored embeddings are converted; try again later"
-            : "Semantic search is unavailable: the embedding index is incomplete",
+          "Semantic search is unavailable: the embedding index is incomplete",
       })
     }
 
