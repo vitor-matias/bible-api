@@ -27,12 +27,20 @@ export const parseTrustProxy = (
       throw new TypeError(`TRUST_PROXY hop count is too large: "${rawValue}"`)
     }
 
+    // 0 trusts no hop, so behind a proxy every client shares the proxy's IP
+    // and one rate-limit bucket. Someone who means "no proxy" leaves it unset.
+    if (hops === 0) {
+      throw new TypeError(
+        'TRUST_PROXY="0" trusts no proxy hop; leave it unset (or "false") when there is no proxy, or give the hop count',
+      )
+    }
+
     return hops
   }
 
   if (!Number.isNaN(Number(value))) {
     throw new TypeError(
-      `TRUST_PROXY must be "false", a non-negative integer hop count, or a proxy-addr value; got "${rawValue}"`,
+      `TRUST_PROXY must be "false", a positive integer hop count, or a proxy-addr value; got "${rawValue}"`,
     )
   }
 
