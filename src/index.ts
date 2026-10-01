@@ -14,6 +14,7 @@ import { flushDatabase } from "./util/flushDatabase"
 import {
   getImportState,
   isDataAvailable,
+  setDegraded,
   setImportState,
 } from "./util/importState"
 import { migrateEmbeddingsToHashes } from "./util/migrateEmbeddings"
@@ -79,7 +80,7 @@ app.use(cors({ origin: allowedOrigins.length > 0 ? allowedOrigins : "*" }))
 
 // Always available, so an orchestrator can tell "still importing" from "dead"
 // instead of seeing a closed port for the whole import. "degraded" still
-// serves: the primary data is complete, only some embeddings are missing.
+// serves: the primary data is complete, only semantic search is unavailable.
 app.get("/health", (_req, res) => {
   res.status(isDataAvailable() ? 200 : 503).json({ status: getImportState() })
 })
@@ -109,11 +110,11 @@ loadFilesIntoMemory()
     // Chapters whose embeddings failed are absent from the vector index, so
     // semantic search would silently answer from a partial corpus. Serve the
     // primary data, but mark the process degraded and refuse semantic search.
-    setImportState(
-      semanticIndexComplete && getEmbeddingFailureCount() === 0
-        ? "ready"
-        : "degraded",
-    )
+    if (semanticIndexComplete && getEmbeddingFailureCount() === 0) {
+      setImportState("ready")
+    } else {
+      setDegraded("incomplete")
+    }
   })
   .catch((error) => {
     setImportState("failed")
@@ -130,7 +131,7 @@ async function migrateLegacyEmbeddings(
   console.info(
     "Converting v2 embeddings to hashes in place; semantic search is unavailable until it finishes.",
   )
-  setImportState("degraded")
+  setDegraded("migrating")
   try {
     const converted = await migrateEmbeddingsToHashes(client)
     await client.set(IMPORT_COMPLETE_KEY, "1")
@@ -168,6 +169,8 @@ async function loadFilesIntoMemory(): Promise<boolean> {
     await assertRedisModules(client)
 
     const alreadyLoaded = (await client.exists(IMPORT_COMPLETE_KEY)) === 1
+    const legacyLoaded =
+      !alreadyLoaded && (await client.exists(LEGACY_IMPORT_COMPLETE_KEY)) === 1
 
     if (alreadyLoaded && !reimport) {
       console.info(
@@ -176,14 +179,28 @@ async function loadFilesIntoMemory(): Promise<boolean> {
       return true
     }
 
-    if (!reimport && (await client.exists(LEGACY_IMPORT_COMPLETE_KEY)) === 1) {
+    if (legacyLoaded && !reimport) {
       return await migrateLegacyEmbeddings(client, start)
     }
 
     // The flush below is destructive and only embeddings can rebuild what it
-    // removes, so find out now, while any old data still serves, that they can
-    // be generated. A missing, rotated or out-of-quota key throws here.
-    await generateEmbedding("ping")
+    // removes, so find out first, while nothing has been touched, that they
+    // can be generated. A missing, rotated or out-of-quota key throws here.
+    try {
+      await generateEmbedding("ping")
+    } catch (error) {
+      if (!alreadyLoaded && !legacyLoaded) {
+        throw error
+      }
+      // Complete data is already stored, so refusing the reimport costs
+      // nothing; carry on as a start without --reimport would and keep
+      // serving it.
+      console.error(
+        "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check OPENAI_API_KEY and restart with --reimport to retry.",
+        error,
+      )
+      return alreadyLoaded || (await migrateLegacyEmbeddings(client, start))
+    }
 
     // flushDatabase also clears any stale completion marker.
     await flushDatabase()

@@ -1,4 +1,5 @@
 import type { createClient, SearchReply } from "redis"
+import { EMBEDDING_INDEX } from "../../util/embeddingIndex"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { generateEmbedding } from "../openai/embeddings"
 
@@ -37,7 +38,7 @@ export const semanticSearchVerses = async (
   // sizing K to the requested page would make `total` (and therefore
   // `totalPages`) shrink to that page and hide the rest of the results.
   const results = (await client.ft.search(
-    "idx:verseEmbeddings",
+    EMBEDDING_INDEX,
     `*=>[KNN ${KNN_MAX_RESULTS} @embedding $vec AS score]`,
     {
       PARAMS: {
