@@ -104,31 +104,41 @@ app.listen(port, () => {
 // primary data, which is whole in every case; only semantic search waits.
 type ImportOutcome = "complete" | "embeddingsPending" | "indexIncomplete"
 
-loadFilesIntoMemory()
-  .then((outcome) => {
-    if (outcome === "complete") {
-      setImportState("ready")
-      return
-    }
-
-    // Chapters whose embeddings failed are absent from the vector index, so
-    // semantic search would silently answer from a partial corpus. Serve the
-    // primary data, but mark the process degraded and refuse semantic search.
-    setImportState("degraded")
-
-    // Re-embedding runs after the data is already being served: it is one
-    // OpenAI call per failed chapter, and an outage during the import can leave
-    // hundreds of them — minutes of 503s if the start waited for it.
-    if (outcome === "embeddingsPending") {
-      reembedFailedChapters().catch((error) => {
-        console.error("Re-embedding failed chapters failed:", error)
-      })
-    }
-  })
-  .catch((error) => {
+// Never rejects: an import failure is recorded in the import state, and a
+// failed background re-embed only leaves semantic search disabled.
+const startImport = async (): Promise<void> => {
+  let outcome: ImportOutcome
+  try {
+    outcome = await loadFilesIntoMemory()
+  } catch (error) {
     setImportState("failed")
     console.error("Fatal startup error:", error)
-  })
+    return
+  }
+
+  if (outcome === "complete") {
+    setImportState("ready")
+    return
+  }
+
+  // Chapters whose embeddings failed are absent from the vector index, so
+  // semantic search would silently answer from a partial corpus. Serve the
+  // primary data, but mark the process degraded and refuse semantic search.
+  setImportState("degraded")
+
+  // Re-embedding runs after the data is already being served: it is one OpenAI
+  // call per failed chapter, and an outage during the import can leave
+  // hundreds of them — minutes of 503s if the start waited for it.
+  if (outcome === "embeddingsPending") {
+    try {
+      await reembedFailedChapters()
+    } catch (error) {
+      console.error("Re-embedding failed chapters failed:", error)
+    }
+  }
+}
+
+startImport()
 
 function createImportClient() {
   const client = createClient({

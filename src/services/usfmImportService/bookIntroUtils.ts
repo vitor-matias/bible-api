@@ -61,7 +61,7 @@ const NOTE = /\\(f|fe|x) ([\s\S]*?)\\\1\*/g
 // Character markers only style the text they wrap (`\bk Gênesis\bk*`, nested
 // `\+it`), so the opening marker with its delimiting space and the closing
 // marker are dropped and the wrapped text is kept.
-const CHARACTER_MARKER = /\\\+?[a-z][a-z0-9]*(?:\*| )?/gi
+const CHARACTER_MARKER = /\\\+?[a-z][a-z0-9]*[* ]?/gi
 
 /**
  * Reduces a header's content to readable text. usfm-js keeps inline markup in
@@ -242,7 +242,7 @@ export const extractBookIntro = (
   while (elements.at(-1)?.type === "introMajorSection") {
     const heading = elements.pop() as IntroMajorSection
     console.warn(
-      `bookIntroUtils: \\ms "${heading.text}" precedes the first chapter, not introduction content; not stored in the introduction`,
+      String.raw`bookIntroUtils: \ms "${heading.text}" precedes the first chapter, not introduction content; not stored in the introduction`,
     )
   }
 
