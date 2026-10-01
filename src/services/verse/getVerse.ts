@@ -1,15 +1,18 @@
 import type { createClient } from "redis"
 
+export const verseKey = (
+  bookId: Book["id"],
+  chapterNumber: Chapter["number"],
+  verseNumber: Verse["number"],
+): string => `verse:${bookId}:${chapterNumber}:${verseNumber}`
+
 export const getVerse = async (
   client: ReturnType<typeof createClient>,
   bookId: Book["id"],
   chapterNumber: Chapter["number"],
   verseNumber: Verse["number"],
 ): Promise<Verse | null> => {
-  return getVerseByKey(
-    client,
-    `verse:${bookId}:${chapterNumber}:${verseNumber}`,
-  )
+  return getVerseByKey(client, verseKey(bookId, chapterNumber, verseNumber))
 }
 
 export const getVerseByKey = async (

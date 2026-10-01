@@ -51,8 +51,73 @@ type Book = {
   shortName: string
   abrv: string
   chapterCount: number
+  introduction?: IntroElement[]
   chapters?: Chapter[]
 }
+
+type IntroElement =
+  | IntroTitle
+  | IntroParagraph
+  | IntroSection
+  | IntroOutline
+  | IntroTable
+  | IntroListItem
+  | IntroSidebar
+  | IntroMajorSection
+
+// The prose of a text-bearing intro element, with any notes the source attached
+// to it lifted out into their own list rather than left inline as markup.
+type IntroText = {
+  text: string
+  footnotes?: _Footnote[]
+}
+
+type IntroTitle = IntroText & {
+  type: "introTitle"
+  level: 1 | 2
+}
+
+type IntroParagraph = IntroText & {
+  type: "introParagraph"
+}
+
+type IntroSection = IntroText & {
+  type: "introSection"
+  level: 1 | 2
+}
+
+type IntroOutline = IntroText & {
+  type: "introOutline"
+}
+
+type IntroTable = {
+  type: "introTable"
+  rows: string[][]
+}
+
+type IntroListItem = IntroText & {
+  type: "introListItem"
+}
+
+type IntroSidebar = {
+  type: "introSidebar"
+  content: IntroElement[]
+}
+
+type IntroMajorSection = IntroText & {
+  type: "introMajorSection"
+}
+
+// Front-matter introductions (USFM \id FRT / INT). Stored outside the book
+// namespace because every such file shares one id, and outside every search
+// index because introductions are not search content.
+type BookIntro = {
+  slug: string
+  name: string
+  introduction: IntroElement[]
+}
+
+type IntroSummary = Pick<BookIntro, "slug" | "name">
 
 type Chapter = {
   bookId: Book["id"]
