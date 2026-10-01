@@ -4,8 +4,10 @@ type Client = ReturnType<typeof createClient>
 
 // One connection is shared by every request and by the health check. The
 // "error" listener is required: without it, node-redis throws on connection loss
-// and crashes the process. node-redis reconnects automatically and queues
-// commands meanwhile.
+// and crashes the process. node-redis reconnects automatically in the
+// background; disableOfflineQueue keeps it from also queuing every command
+// issued meanwhile, which would otherwise pile up requests until the process
+// runs out of memory during a long outage. Commands fail fast instead.
 let client: Client | undefined
 
 // Concurrent callers arriving before the socket is open share one handshake;
@@ -14,7 +16,10 @@ let connecting: Promise<unknown> | undefined
 
 export const getClient = async (): Promise<Client> => {
   if (!client) {
-    client = createClient({ url: process.env.DB_URL })
+    client = createClient({
+      url: process.env.DB_URL,
+      disableOfflineQueue: true,
+    })
     client.on("error", (err) => console.error(`Redis client error: ${err}`))
   }
   if (!client.isOpen) {

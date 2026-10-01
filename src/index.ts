@@ -27,8 +27,9 @@ const app = express()
 app.disable("x-powered-by")
 const port = process.env.PORT || "3000"
 
-// Set TRUST_PROXY when running behind a reverse proxy — "true", a hop
-// count (e.g. "1"), or a proxy-addr value ("loopback", an IP, a CIDR) —
+// Set TRUST_PROXY when running behind a reverse proxy — a hop count (e.g.
+// "1") or a proxy-addr value ("loopback", an IP, a CIDR); "true" is rejected
+// because it trusts every X-Forwarded-For entry —
 // otherwise rate limiting keys on the proxy address instead of the client.
 // parseTrustProxy rejects values Express would misread; see its comment.
 const trustProxy = process.env.TRUST_PROXY

@@ -216,11 +216,14 @@ export const embedAndStoreVerses = async (
     )
   }
 
+  // Each vector is kept as its raw float32 bytes (see vectorBuffer.ts), not a
+  // RedisJSON array, which would cost several times as much. encodeVector
+  // rejects a vector of the wrong length, which surfaces here as a rejected
+  // chapter instead of being stored and later misread. Encoding everything
+  // before queueing keeps a bad vector from leaving a half-written chapter.
   const multi = client.multi()
   for (let i = 0; i < versesData.length; i++) {
     const v = versesData[i].verseData
-    // encodeVector rejects a vector of the wrong length, which surfaces here
-    // as a rejected chapter instead of being stored and later misread.
     multi.set(
       embeddingKey(v.bookId, v.chapterNumber, v.number),
       encodeVector(embeddings[i]),
