@@ -138,7 +138,8 @@ const startImport = async (): Promise<void> => {
   }
 }
 
-startImport()
+// startImport handles its own errors, so nothing is left to catch here.
+void startImport()
 
 function createImportClient() {
   const client = createClient({
