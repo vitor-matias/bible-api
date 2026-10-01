@@ -5,14 +5,16 @@ import { generateEmbedding } from "../openai/embeddings"
 import { IMPORT_COMPLETE_KEY } from "./importMarker"
 import { listUsfmFiles } from "./listUsfmFiles"
 import { readBook } from "./readBook"
+import { retryFailedEmbeddings } from "./retryEmbeddings"
 import { storeBook } from "./storeBook"
-import { getEmbeddingFailureCount } from "./storeChapter"
 
 type Client = ReturnType<typeof createClient>
 
 // Flushes the database, then loads every USFM book in `textsPath` into it,
-// embedding each verse. The completion marker is only written if every chapter
-// embedded, so an incomplete import is redone rather than served.
+// embedding each verse. A chapter whose embedding call fails is recorded
+// rather than aborting the import: the primary data matters more, and this
+// call already tries once to re-embed any recorded chapter before returning,
+// since a one-shot `npm run import` run gets no later start to retry on.
 export const importBible = async (
   client: Client,
   textsPath: string,
@@ -28,7 +30,8 @@ export const importBible = async (
   // old data still serves.
   await generateEmbedding("teste")
 
-  // flushDatabase also clears any stale completion marker.
+  // flushDatabase also clears any stale completion marker and the record of
+  // chapters whose embeddings failed.
   await flushDatabase()
 
   console.log(textsPath)
@@ -39,15 +42,16 @@ export const importBible = async (
     await storeBook(client, bibleData, file)
   }
 
-  const embeddingFailures = getEmbeddingFailureCount()
+  // The primary (verse) data is complete regardless of embedding failures, so
+  // the marker is written now: a later start serves it immediately instead of
+  // redoing the whole import over a handful of chapters. See retryEmbeddings.ts.
+  await client.set(IMPORT_COMPLETE_KEY, "1")
+
+  const embeddingFailures = await retryFailedEmbeddings(client)
   if (embeddingFailures > 0) {
-    // Leaving the marker unwritten keeps the next start from silently serving
-    // a corpus whose semantic index is permanently missing these chapters.
     console.warn(
-      `WARNING: embeddings failed for ${embeddingFailures} chapter(s); semantic search would miss their verses, so the import is not marked complete and the next start will reimport.`,
+      `WARNING: embeddings are missing for ${embeddingFailures} chapter(s); semantic search misses their verses until a later start re-embeds them.`,
     )
-  } else {
-    await client.set(IMPORT_COMPLETE_KEY, "1")
   }
 
   console.log(`load complete. took ${(Date.now() - start) / 1000}s`)

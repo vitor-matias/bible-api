@@ -9,6 +9,7 @@ import {
 } from "./services/search/searchIndex"
 import { importBible } from "./services/usfmImportService/importBible"
 import { isDataImported } from "./services/usfmImportService/importMarker"
+import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
 import { buildHealth, pingDatabase } from "./util/health"
 import {
   getImportState,
@@ -139,10 +140,10 @@ async function loadData(): Promise<ImportState> {
   await client.connect()
 
   try {
-    // Chapters whose embeddings failed are absent from the vector index, so
-    // semantic search would silently answer from a partial corpus. The primary
-    // data is still served, but the process is marked degraded and refuses
-    // semantic search.
+    // Chapters whose embeddings failed are recorded in Redis rather than held
+    // in memory (see retryFailedEmbeddings), so every start retries them, not
+    // just the one that hit the failure. They are absent from the vector
+    // index meanwhile, so semantic search is disabled while any remain.
     let embeddingFailures = 0
 
     if (reimport || !(await isDataImported(client))) {
@@ -161,11 +162,13 @@ async function loadData(): Promise<ImportState> {
           "No Bible data in the database and PATH_TO_TEXTS is not set, so this process cannot import it. Run `npm run import` against this database; the data is loaded here as soon as it appears.",
         )
         await waitForImport(client)
+        embeddingFailures = await retryFailedEmbeddings(client)
       }
     } else {
       console.info(
         "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
       )
+      embeddingFailures = await retryFailedEmbeddings(client)
     }
 
     const stats = await loadSearchIndex(client)

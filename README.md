@@ -54,9 +54,11 @@ again.
 
 The import first checks that the folder holds `.usfm` files and that OpenAI
 answers, so a wrong folder or a bad key fails before anything is deleted. Then it
-flushes the database and embeds every verse, one OpenAI call
-per chapter: expect several minutes and a few cents. It marks itself complete
-(`importComplete:v3`) only when every chapter embedded.
+flushes the database and embeds every verse, one OpenAI call per chapter: expect
+several minutes and a few cents. A chapter whose embedding call fails does not
+hold up the rest: it is recorded instead, served as `degraded`, and retried —
+once right away, then again on every later start — until it succeeds, rather
+than flushing and reimporting the whole corpus over a handful of chapters.
 
 **Restart the API after re-importing.** The search index is loaded into memory at
 startup and is not refreshed while the process runs.
