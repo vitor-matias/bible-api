@@ -11,11 +11,12 @@ export const setImportState = (next: ImportState): void => {
   state = next
 }
 
-// Verses and books are fully imported. "degraded" only means some chapters are
-// missing embeddings, which does not affect the primary data.
+// Verses and books are fully imported. "degraded" only means the semantic index
+// is incomplete (chapters that failed to embed, or vectors the index skipped),
+// which does not affect the primary data.
 export const isDataAvailable = (): boolean =>
   state === "ready" || state === "degraded"
 
-// Every chapter's embeddings were written, so KNN results cover the whole
+// The vector index is known to hold every verse, so KNN results cover the whole
 // corpus rather than an arbitrary subset.
 export const isSemanticSearchAvailable = (): boolean => state === "ready"

@@ -22,8 +22,8 @@ export const searchVersesController = async (req: Request, res: Response) => {
   const limitNumber = Number.parseInt(limit as string, 10)
 
   if (semantic === "true") {
-    // Some chapters failed to embed, so the vector index covers only part of
-    // the corpus. Answering anyway would look like a complete result set.
+    // The vector index covers only part of the corpus (failed chapters, or
+    // vectors it skipped). Answering anyway would look like a complete result set.
     if (!isSemanticSearchAvailable()) {
       return res.status(503).json({
         error:

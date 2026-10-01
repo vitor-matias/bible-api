@@ -1,9 +1,11 @@
 import type { createClient, SearchReply } from "redis"
+import { EMBEDDING_INDEX } from "../../util/embeddingIndex"
+import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { generateEmbedding } from "../openai/embeddings"
 
+// The only field the query returns: the vector itself never leaves the index.
 type EmbeddingDocument = {
   key: string
-  embedding: number[]
 }
 
 // KNN search is capped at this many results; results beyond this offset are unavailable.
@@ -30,13 +32,13 @@ export const semanticSearchVerses = async (
   }
 
   const queryEmbedding = await generateEmbedding(search)
-  const embeddingBuffer = Buffer.from(new Float32Array(queryEmbedding).buffer)
+  const embeddingBuffer = toFloat32Buffer(queryEmbedding)
 
   // Always ask for the full window: a KNN query returns at most K documents, so
   // sizing K to the requested page would make `total` (and therefore
   // `totalPages`) shrink to that page and hide the rest of the results.
   const results = (await client.ft.search(
-    "idx:verseEmbeddings",
+    EMBEDDING_INDEX,
     `*=>[KNN ${KNN_MAX_RESULTS} @embedding $vec AS score]`,
     {
       PARAMS: {

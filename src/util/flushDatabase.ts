@@ -1,4 +1,5 @@
 import { createClient } from "redis"
+import { createEmbeddingIndex } from "./embeddingIndex"
 
 export const flushDatabase = async () => {
   const client = createClient({ url: process.env.DB_URL })
@@ -36,27 +37,7 @@ export const flushDatabase = async () => {
       },
     )
 
-    await client.ft.create(
-      "idx:verseEmbeddings",
-      {
-        "$.key": {
-          type: "TEXT",
-          AS: "key",
-        },
-        "$.embedding": {
-          type: "VECTOR",
-          AS: "embedding",
-          ALGORITHM: "HNSW",
-          TYPE: "FLOAT32",
-          DIM: 1536, // Dimension for text-embedding-3-small
-          DISTANCE_METRIC: "COSINE",
-        },
-      },
-      {
-        ON: "JSON",
-        PREFIX: "embedding:",
-      },
-    )
+    await createEmbeddingIndex(client)
   } finally {
     await client.quit()
   }

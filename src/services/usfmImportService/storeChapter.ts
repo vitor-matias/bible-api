@@ -1,6 +1,9 @@
 import type { createClient } from "redis"
+import { EMBEDDING_KEY_PREFIX } from "../../util/embeddingIndex"
+import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { generateEmbeddings } from "../openai/embeddings"
+import { verseKey } from "../verse/getVerse"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
 // Chapters whose embeddings failed transiently, as "bookId:chapter" members.
@@ -213,15 +216,20 @@ export const embedAndStoreVerses = async (
     )
   }
 
+  // Each vector is kept as its raw float32 bytes in a hash: RedisJSON would
+  // spend ~27 bytes per number, turning a 6 KB vector into ~41 KB — 65% of the
+  // whole database. A vector of the wrong length makes toFloat32Buffer throw,
+  // so the chapter counts as an embedding failure instead of being stored
+  // unindexed. Encoding everything before queueing keeps a bad vector from
+  // leaving a half-written chapter.
   const multi = client.multi()
   for (let i = 0; i < versesData.length; i++) {
     const v = versesData[i].verseData
-    multi.json.set(
-      `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
-      "$",
+    multi.hSet(
+      `${EMBEDDING_KEY_PREFIX}${v.bookId}:${v.chapterNumber}:${v.number}`,
       {
-        key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
-        embedding: embeddings[i],
+        key: verseKey(v.bookId, v.chapterNumber, v.number),
+        embedding: toFloat32Buffer(embeddings[i]),
       },
     )
   }
