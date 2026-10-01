@@ -6,8 +6,8 @@ import helmet from "helmet"
 import { createClient } from "redis"
 import setEndpoints from "./rest"
 import { readBook } from "./services/usfmImportService/readBook"
+import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
 import { storeBook } from "./services/usfmImportService/storeBook"
-import { getEmbeddingFailureCount } from "./services/usfmImportService/storeChapter"
 import { flushDatabase } from "./util/flushDatabase"
 import {
   getImportState,
@@ -20,6 +20,7 @@ require("dotenv").config()
 
 // Written only after a full import finishes, so a crash mid-import leaves the
 // marker absent and the next start reimports instead of serving partial data.
+// Chapters whose embeddings failed do not hold it back; see loadFilesIntoMemory.
 // The suffix is part of the storage format: bump it when the layout changes so
 // existing databases reimport instead of being read with the wrong assumptions.
 const IMPORT_COMPLETE_KEY = "importComplete:v2"
@@ -95,11 +96,11 @@ app.listen(port, () => {
 })
 
 loadFilesIntoMemory()
-  .then(() => {
+  .then((missingEmbeddings) => {
     // Chapters whose embeddings failed are absent from the vector index, so
     // semantic search would silently answer from a partial corpus. Serve the
     // primary data, but mark the process degraded and refuse semantic search.
-    setImportState(getEmbeddingFailureCount() > 0 ? "degraded" : "ready")
+    setImportState(missingEmbeddings > 0 ? "degraded" : "ready")
   })
   .catch((error) => {
     setImportState("failed")
@@ -108,8 +109,9 @@ loadFilesIntoMemory()
 
 // Loads the Bible data into Redis. Skips re-importing (and the destructive
 // flush + costly embedding regeneration) when data is already present, unless
-// the process is started with --reimport.
-async function loadFilesIntoMemory() {
+// the process is started with --reimport. Resolves to the number of chapters
+// still missing embeddings.
+async function loadFilesIntoMemory(): Promise<number> {
   const start = Date.now()
   const reimport = process.argv.includes("--reimport")
 
@@ -126,10 +128,11 @@ async function loadFilesIntoMemory() {
       console.info(
         "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
       )
-      return
+      return await retryFailedEmbeddings(client)
     }
 
-    // flushDatabase also clears any stale completion marker.
+    // flushDatabase also clears any stale completion marker and the record of
+    // chapters whose embeddings failed.
     await flushDatabase()
 
     const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
@@ -154,18 +157,21 @@ async function loadFilesIntoMemory() {
       )
     }
 
-    const embeddingFailures = getEmbeddingFailureCount()
-    if (embeddingFailures > 0) {
-      // Leaving the marker unwritten keeps the next start from silently serving
-      // a corpus whose semantic index is permanently missing these chapters.
+    // A chapter whose embedding call failed is recorded in Redis rather than
+    // blocking the marker: the primary data is complete, and a later start
+    // re-embeds just those chapters instead of flushing and reimporting
+    // everything.
+    await client.set(IMPORT_COMPLETE_KEY, "1")
+
+    const missingEmbeddings = await retryFailedEmbeddings(client)
+    if (missingEmbeddings > 0) {
       console.warn(
-        `WARNING: embeddings failed for ${embeddingFailures} chapter(s); semantic search would miss their verses, so the import is not marked complete and the next start will reimport.`,
+        `WARNING: embeddings are missing for ${missingEmbeddings} chapter(s); semantic search is disabled until the next start re-embeds them.`,
       )
-    } else {
-      await client.set(IMPORT_COMPLETE_KEY, "1")
     }
 
     console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
+    return missingEmbeddings
   } finally {
     await client.quit()
   }

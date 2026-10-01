@@ -48,6 +48,12 @@ export default (app: express.Express): void => {
   // reaches checkCache validates its query parameters first — otherwise
   // arbitrary junk params mint unbounded cache entries.
   const noQueryParams = validateQueryParams([])
+  // text/page/limit are validated in detail by validateSearchParams; this only
+  // bounds the key space (no unknown params, semantic limited to true/false).
+  const validateSearchQueryParams = validateQueryParams(
+    ["text", "page", "limit", "semantic"],
+    ["semantic"],
+  )
 
   // Endpoint to get a specific verse
   app.get(
@@ -71,16 +77,19 @@ export default (app: express.Express): void => {
   // must not consume the strict per-minute budget reserved for real work.
   app.get(
     "/v1/search",
+    validateSearchQueryParams,
     validateSearchParams,
     searchRateLimit,
     checkCache,
     searchVersesController,
   )
+  // The full-book limiter sits after checkCache: it guards the expensive
+  // materialization on a miss, and a cached replay must not spend that budget.
   app.get(
     "/v1/books",
     validateBooksParams,
-    fullBookRateLimit,
     checkCache,
+    fullBookRateLimit,
     getBooksController,
   )
 
@@ -94,8 +103,8 @@ export default (app: express.Express): void => {
   app.get(
     "/v1/:book",
     validateQueryParams(["withVerses"]),
-    fullBookRateLimit,
     checkCache,
+    fullBookRateLimit,
     getBookController,
   )
 

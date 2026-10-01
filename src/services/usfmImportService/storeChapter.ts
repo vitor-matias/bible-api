@@ -3,25 +3,20 @@ import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { generateEmbeddings } from "../openai/embeddings"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
-// Repeated failures indicate a systemic problem (bad OPENAI_API_KEY, outage)
-// rather than a transient one, so the import aborts instead of silently
-// producing a corpus without embeddings.
-const MAX_CONSECUTIVE_EMBEDDING_FAILURES = 3
-let consecutiveEmbeddingFailures = 0
-let embeddingFailureCount = 0
+// Chapters whose embeddings failed transiently, as "bookId:chapter" members.
+// Persisted in Redis (and cleared by flushDatabase with everything else) so a
+// later start can re-embed just these chapters instead of reimporting the
+// whole corpus; semantic search stays disabled while the set is non-empty.
+export const EMBEDDING_FAILURES_KEY = "embeddingFailures"
 
-// Chapters whose embeddings failed transiently during this import; semantic
-// search misses their verses until a reimport.
-export const getEmbeddingFailureCount = () => embeddingFailureCount
-
-type VerseForEmbedding = {
+export type VerseForEmbedding = {
   verseData: Verse
   text: string
 }
 
 // Single definition of what qualifies for the semantic index: real verses
 // (verse 0 is the "front" pseudo-verse) that carry some text.
-const collectForEmbedding = (
+export const collectForEmbedding = (
   versesData: VerseForEmbedding[],
   verseData: Verse,
   verseNumber: number,
@@ -182,45 +177,53 @@ export const storeChapter = async (
 
   // Generate embeddings in batch for all verses in the chapter
   if (versesData.length > 0) {
-    const texts = versesData.map((v) => v.text)
-
     console.log(
-      `Generating embeddings for chapter ${chapterNumber} with ${texts.length} verses...`,
+      `Generating embeddings for chapter ${chapterNumber} with ${versesData.length} verses...`,
     )
     try {
-      const embeddings = await generateEmbeddings(texts)
-
-      // Store all embeddings in one pipelined round trip
-      const multi = client.multi()
-      for (let i = 0; i < versesData.length; i++) {
-        const v = versesData[i].verseData
-        if (embeddings[i] && embeddings[i].length > 0) {
-          multi.json.set(
-            `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
-            "$",
-            {
-              key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
-              embedding: embeddings[i],
-            },
-          )
-        }
-      }
-      await multi.exec()
-      consecutiveEmbeddingFailures = 0
+      await embedAndStoreVerses(client, versesData)
     } catch (error) {
-      embeddingFailureCount++
-      consecutiveEmbeddingFailures++
+      // Never stop the import over embeddings: the primary data matters more.
+      // The chapter is recorded and re-embedded on a later start, and semantic
+      // search stays disabled until then.
       console.error(
         `Failed to generate embeddings for chapter ${chapterNumber}:`,
         error,
       )
-      // A missing/invalid API key or an OpenAI outage would otherwise fail
-      // every chapter one by one, leaving the whole corpus without embeddings.
-      if (consecutiveEmbeddingFailures >= MAX_CONSECUTIVE_EMBEDDING_FAILURES) {
-        throw new Error(
-          `Embedding generation failed for ${consecutiveEmbeddingFailures} chapters in a row — aborting import. Last error: ${error}`,
-        )
-      }
+      await client.sAdd(EMBEDDING_FAILURES_KEY, `${bookCode}:${chapterNumber}`)
     }
   }
+}
+
+// Embeds a chapter's verses in one OpenAI call and writes the vectors in one
+// pipelined round trip. Throws if either step fails.
+export const embedAndStoreVerses = async (
+  client: ReturnType<typeof createClient>,
+  versesData: VerseForEmbedding[],
+): Promise<void> => {
+  const embeddings = await generateEmbeddings(versesData.map((v) => v.text))
+
+  // generateEmbeddings leaves [] for any entry the API response lacked. Writing
+  // the rest would count the chapter as embedded while some verses have no
+  // vector, so treat a partial response as a failure before writing anything.
+  const missing = versesData.filter((_, i) => !embeddings[i]?.length).length
+  if (missing > 0) {
+    throw new Error(
+      `Embedding response was missing vectors for ${missing} of ${versesData.length} verses`,
+    )
+  }
+
+  const multi = client.multi()
+  for (let i = 0; i < versesData.length; i++) {
+    const v = versesData[i].verseData
+    multi.json.set(
+      `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
+      "$",
+      {
+        key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
+        embedding: embeddings[i],
+      },
+    )
+  }
+  await multi.exec()
 }

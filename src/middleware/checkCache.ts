@@ -35,16 +35,19 @@ export const checkCache = async (
     // Store the original json function
     const originalJson = res.json.bind(res)
 
-    // Override the json function to cache successful responses only.
+    // Override the json function to cache successful responses only. The body
+    // is serialized once and that string is both cached and sent, rather than
+    // stringified here and again by res.json (a ~20 MB body would be built
+    // twice on the event loop).
     res.json = (body) => {
+      const payload = JSON.stringify(body)
+
+      // undefined has no JSON form; let Express handle it as it always did.
+      if (payload === undefined) return originalJson(body)
+
       // Only 200s are cached, so the status never needs storing alongside.
       if (res.statusCode === 200) {
-        const payload = JSON.stringify(body)
-
-        if (
-          payload !== undefined &&
-          Buffer.byteLength(payload) <= MAX_CACHEABLE_BYTES
-        ) {
+        if (Buffer.byteLength(payload) <= MAX_CACHEABLE_BYTES) {
           // SET carries its own expiry, so a key can never be left without a
           // TTL (volatile-lru only evicts keys that have one).
           client
@@ -56,7 +59,7 @@ export const checkCache = async (
           console.warn("Response too large to cache")
         }
       }
-      return originalJson(body)
+      return res.type("application/json").send(payload)
     }
 
     next()
