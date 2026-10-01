@@ -1,15 +1,11 @@
-import type { createClient, SearchReply } from "redis"
-import { EMBEDDING_INDEX } from "../../util/embeddingIndex"
-import { jsonMGet } from "../../util/jsonMGet"
-import { toFloat32Buffer } from "../../util/vectorBuffer"
+import type { createClient } from "redis"
+import { mGetJson } from "../../util/jsonStore"
+import { toQueryVector } from "../../util/vectorBuffer"
 import { generateEmbedding } from "../openai/embeddings"
+import { getVectorIndex, nearest } from "./searchIndex"
 
-// The only field the query returns: the vector itself never leaves the index.
-type EmbeddingDocument = {
-  key: string
-}
-
-// KNN search is capped at this many results; results beyond this offset are unavailable.
+// The search returns at most this many results; results beyond this offset are
+// unavailable.
 export const KNN_MAX_RESULTS = 100
 
 export const semanticSearchVerses = async (
@@ -32,33 +28,14 @@ export const semanticSearchVerses = async (
     }
   }
 
-  const queryEmbedding = await generateEmbedding(search)
-  const embeddingBuffer = toFloat32Buffer(queryEmbedding)
+  const queryVector = toQueryVector(await generateEmbedding(search))
 
-  // Always ask for the full window: a KNN query returns at most K documents, so
-  // sizing K to the requested page would make `total` (and therefore
-  // `totalPages`) shrink to that page and hide the rest of the results.
-  const results = (await client.ft.search(
-    EMBEDDING_INDEX,
-    `*=>[KNN ${KNN_MAX_RESULTS} @embedding $vec AS score]`,
-    {
-      PARAMS: {
-        vec: embeddingBuffer,
-      },
-      LIMIT: {
-        from: 0,
-        size: KNN_MAX_RESULTS,
-      },
-      SORTBY: {
-        BY: "score",
-        DIRECTION: "ASC",
-      },
-      RETURN: ["key"],
-      DIALECT: 2,
-    },
-  )) as SearchReply
+  // Always rank the full window: sizing it to the requested page would make
+  // `total` (and therefore `totalPages`) shrink to that page and hide the rest
+  // of the results.
+  const ranked = nearest(getVectorIndex(), queryVector, KNN_MAX_RESULTS)
 
-  if (!results || results.total === 0) {
+  if (ranked.length === 0) {
     return {
       verses: [],
       total: 0,
@@ -67,22 +44,21 @@ export const semanticSearchVerses = async (
     }
   }
 
-  const paginatedDocs = results.documents.slice(offset, offset + pageSize)
-  const totalResults = Math.min(results.total, KNN_MAX_RESULTS)
-  const totalPages = Math.ceil(totalResults / pageSize)
+  const totalPages = Math.ceil(ranked.length / pageSize)
+  const pageKeys = ranked
+    .slice(offset, offset + pageSize)
+    .map((result) => result.key)
 
-  const verseKeys = paginatedDocs.map(
-    (doc) => (doc.value as unknown as EmbeddingDocument).key,
-  )
-
-  // One round trip for the whole page.
-  const verses = (await jsonMGet<Verse>(client, verseKeys)).filter(
-    (verse): verse is Verse => verse != null,
-  )
+  const verses: Verse[] = []
+  for (const verse of await mGetJson<Verse>(client, pageKeys)) {
+    if (verse) {
+      verses.push(verse)
+    }
+  }
 
   return {
     verses,
-    total: totalResults,
+    total: ranked.length,
     currentPage: page,
     totalPages,
   }

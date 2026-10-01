@@ -5,6 +5,9 @@ certs/*
 bin
 export
 
+# USFM texts cloned at build time on a host (see README, "Hosting the texts")
+texts
+
 # Logs
 logs
 *.log

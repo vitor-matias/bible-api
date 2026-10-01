@@ -1,5 +1,5 @@
 import OpenAI from "openai"
-import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "../../util/vectorBuffer"
+import { getEmbeddingDimensions } from "../../util/vectorBuffer"
 
 let _openai: OpenAI | null = null
 
@@ -39,9 +39,9 @@ export const generateEmbeddings = async (
 
   try {
     const response = await getClient().embeddings.create({
-      model: EMBEDDING_MODEL,
-      dimensions: EMBEDDING_DIMENSIONS,
+      model: "text-embedding-3-small",
       input: validTexts.map((v) => v.text),
+      dimensions: getEmbeddingDimensions(),
     })
 
     // Map by the index the API reports rather than by array position, so a
@@ -71,9 +71,9 @@ export const generateEmbedding = async (text: string): Promise<number[]> => {
 
   try {
     const response = await getClient().embeddings.create({
-      model: EMBEDDING_MODEL,
-      dimensions: EMBEDDING_DIMENSIONS,
+      model: "text-embedding-3-small",
       input: text,
+      dimensions: getEmbeddingDimensions(),
     })
 
     return response.data[0].embedding
