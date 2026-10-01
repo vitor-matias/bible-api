@@ -1,5 +1,6 @@
 import type { createClient } from "redis"
 import { NotFoundError } from "../../util/errors"
+import { jsonMGet } from "../../util/jsonMGet"
 import { verseKey } from "../verse/getVerse"
 import { getBookChapterTitle } from "./getBookChapterTitle"
 import { chapterVerseMaxKey, MAX_CHAPTER_VERSES } from "./verseCountKey"
@@ -39,17 +40,16 @@ export const getChapter = async (
   }
 
   // Verses are numbered from 0 (the "front" pseudo-verse) up to the recorded
-  // maximum; json.mGet returns null for any gap, which is filtered out below.
+  // maximum; jsonMGet returns null for any gap, which is filtered out below.
   const versesToFetch: string[] = []
   for (let number = 0; number <= highestVerse; number++) {
     versesToFetch.push(verseKey(bookId, chapterNumber, number))
   }
 
   // One round trip for the whole chapter, issued alongside the title lookup
-  // rather than before it. With the "$" path each entry comes back as a
-  // single-element array (or null for missing keys).
+  // rather than before it.
   const [versesData, title] = await Promise.all([
-    client.json.mGet(versesToFetch, "$"),
+    jsonMGet<Verse>(client, versesToFetch),
     knownTitle !== undefined
       ? Promise.resolve(knownTitle)
       : getBookChapterTitle(client, bookId, chapterNumber).then(
@@ -61,8 +61,7 @@ export const getChapter = async (
   // is verse n, and a gap (or a missing verse 0) is a hole serialized as null.
   const verses: Verse[] = []
   let found = 0
-  for (const doc of versesData) {
-    const verse = (doc as unknown as Verse[] | null)?.[0]
+  for (const verse of versesData) {
     if (verse) {
       verses[verse.number] = verse
       found++

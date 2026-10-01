@@ -81,13 +81,15 @@ export default (app: express.Express): void => {
   )
 
   // Validators run before the limiters: a request the validator will reject
-  // must not consume the strict per-minute budget reserved for real work.
+  // must not consume the strict per-minute budget reserved for real work. The
+  // limiter sits after checkCache for the same reason: a cached replay makes
+  // no OpenAI call and runs no query, so it must not spend that budget either.
   app.get(
     "/v1/search",
     validateSearchQueryParams,
     validateSearchParams,
-    searchRateLimit,
     checkCache,
+    searchRateLimit,
     searchVersesController,
   )
   // The full-book limiter sits after checkCache: it guards the expensive

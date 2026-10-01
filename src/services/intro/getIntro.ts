@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { jsonMGet } from "../../util/jsonMGet"
 import { INTRO_LIST_KEY, introKey } from "../usfmImportService/storeIntro"
 
 export const getIntro = async (
@@ -14,13 +15,10 @@ export const listIntros = async (
 ): Promise<IntroSummary[]> => {
   const slugs = await client.lRange(INTRO_LIST_KEY, 0, -1)
 
-  if (slugs.length === 0) return []
-
-  const docs = await client.json.mGet(slugs.map(introKey), "$")
+  const docs = await jsonMGet<BookIntro>(client, slugs.map(introKey))
   const intros: IntroSummary[] = []
 
-  for (const doc of docs) {
-    const intro = (doc as unknown as BookIntro[] | null)?.[0]
+  for (const intro of docs) {
     if (intro) {
       intros.push({ slug: intro.slug, name: intro.name })
     }

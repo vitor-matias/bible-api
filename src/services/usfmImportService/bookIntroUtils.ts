@@ -1,3 +1,5 @@
+import { collapseWhitespace, parseFootnote } from "./storeVerse"
+
 // Intro paragraph variants (indented, quoted, poetic, list-like, closing...)
 // that all read as running text; the API has no finer-grained element for them.
 const INTRO_PARAGRAPH_BASES = new Set([
@@ -51,6 +53,33 @@ const parseIntroTag = (tag: string): IntroTag | null => {
   return { base: match[1], level: level >= 2 ? 2 : 1 }
 }
 
+// A note runs from its opening marker to the matching closing one:
+// `\f + \fr 1.1 \ft text\f*`, and likewise \fe endnotes and \x
+// cross-references.
+const NOTE = /\\(f|fe|x) ([\s\S]*?)\\\1\*/g
+
+// Character markers only style the text they wrap (`\bk Gênesis\bk*`, nested
+// `\+it`), so the opening marker with its delimiting space and the closing
+// marker are dropped and the wrapped text is kept.
+const CHARACTER_MARKER = /\\\+?[a-z][a-z0-9]*(?:\*| )?/gi
+
+/**
+ * Reduces a header's content to readable text. usfm-js keeps inline markup in
+ * header content verbatim, so without this an introduction would be served
+ * with raw `\bk ...\bk*` and whole `\f ... \f*` notes in its prose. Notes are
+ * lifted out into footnotes, parsed as verse footnotes are.
+ */
+const cleanIntroText = (content: string): IntroText => {
+  const footnotes: _Footnote[] = []
+  const withoutNotes = content.replace(NOTE, (_note, _tag, body: string) => {
+    footnotes.push(...parseFootnote(body))
+    return ""
+  })
+  const text = collapseWhitespace(withoutNotes.replace(CHARACTER_MARKER, ""))
+
+  return footnotes.length > 0 ? { text, footnotes } : { text }
+}
+
 /**
  * Parses a table row content string like "\\th1 Key: \\th2 Value"
  * into an array of cell values: ["Key:", "Value"]
@@ -58,10 +87,14 @@ const parseIntroTag = (tag: string): IntroTag | null => {
  * Rows may use header cells (\th, \thr) or regular cells (\tc, \tcr).
  */
 const parseTableRow = (content: string): string[] => {
-  return content
-    .split(/\\t(?:hr|cr|h|c)\d+\s*/)
-    .filter((cell) => cell.trim().length > 0)
-    .map((cell) => cell.trim())
+  return (
+    content
+      .split(/\\t(?:hr|cr|h|c)\d+\s*/)
+      // A cell is a plain string, so it has nowhere to keep a note; only its
+      // prose survives.
+      .map((cell) => cleanIntroText(cell).text)
+      .filter((cell) => cell.length > 0)
+  )
 }
 
 /**
@@ -73,44 +106,49 @@ const pushElement = (
   { base, level }: IntroTag,
   content: string,
 ): void => {
+  if (base === "tr") {
+    const row = parseTableRow(content)
+    const lastElement = elements.at(-1)
+    // Group consecutive tr rows into a single IntroTable
+    if (lastElement?.type === "introTable") {
+      lastElement.rows.push(row)
+    } else {
+      elements.push({ type: "introTable", rows: [row] })
+    }
+    return
+  }
+
+  const introText = cleanIntroText(content)
+
+  // Content that was nothing but markup has nothing left to represent.
+  if (!introText.text && !introText.footnotes) return
+
   if (INTRO_PARAGRAPH_BASES.has(base)) {
-    elements.push({ type: "introParagraph", text: content })
+    elements.push({ type: "introParagraph", ...introText })
     return
   }
 
   switch (base) {
     case "imt":
     case "imte":
-      elements.push({ type: "introTitle", level, text: content })
+      elements.push({ type: "introTitle", level, ...introText })
       break
 
     case "is":
-      elements.push({ type: "introSection", level, text: content })
+      elements.push({ type: "introSection", level, ...introText })
       break
 
     case "io":
-      elements.push({ type: "introOutline", text: content })
+      elements.push({ type: "introOutline", ...introText })
       break
 
     case "ili":
-      elements.push({ type: "introListItem", text: content })
+      elements.push({ type: "introListItem", ...introText })
       break
 
     case "ms":
-      elements.push({ type: "introMajorSection", text: content })
+      elements.push({ type: "introMajorSection", ...introText })
       break
-
-    case "tr": {
-      const row = parseTableRow(content)
-      const lastElement = elements.at(-1)
-      // Group consecutive tr rows into a single IntroTable
-      if (lastElement?.type === "introTable") {
-        lastElement.rows.push(row)
-      } else {
-        elements.push({ type: "introTable", rows: [row] })
-      }
-      break
-    }
   }
 }
 
@@ -194,6 +232,17 @@ export const extractBookIntro = (
   if (sidebarContent !== null) {
     console.warn(
       String.raw`bookIntroUtils: unclosed \esb sidebar block — content discarded`,
+    )
+  }
+
+  // usfm-js reports everything before the first \c as a header, so a \ms that
+  // heads the opening chapter (Psalms' "LIVRO I") arrives here too. A major
+  // section with no introduction content after it introduces the body, not
+  // the introduction, so it is not stored as one.
+  while (elements.at(-1)?.type === "introMajorSection") {
+    const heading = elements.pop() as IntroMajorSection
+    console.warn(
+      `bookIntroUtils: \\ms "${heading.text}" precedes the first chapter, not introduction content; not stored in the introduction`,
     )
   }
 

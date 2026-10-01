@@ -65,26 +65,29 @@ type IntroElement =
   | IntroSidebar
   | IntroMajorSection
 
-type IntroTitle = {
+// The prose of a text-bearing intro element, with any notes the source attached
+// to it lifted out into their own list rather than left inline as markup.
+type IntroText = {
+  text: string
+  footnotes?: _Footnote[]
+}
+
+type IntroTitle = IntroText & {
   type: "introTitle"
   level: 1 | 2
-  text: string
 }
 
-type IntroParagraph = {
+type IntroParagraph = IntroText & {
   type: "introParagraph"
-  text: string
 }
 
-type IntroSection = {
+type IntroSection = IntroText & {
   type: "introSection"
   level: 1 | 2
-  text: string
 }
 
-type IntroOutline = {
+type IntroOutline = IntroText & {
   type: "introOutline"
-  text: string
 }
 
 type IntroTable = {
@@ -92,9 +95,8 @@ type IntroTable = {
   rows: string[][]
 }
 
-type IntroListItem = {
+type IntroListItem = IntroText & {
   type: "introListItem"
-  text: string
 }
 
 type IntroSidebar = {
@@ -102,9 +104,8 @@ type IntroSidebar = {
   content: IntroElement[]
 }
 
-type IntroMajorSection = {
+type IntroMajorSection = IntroText & {
   type: "introMajorSection"
-  text: string
 }
 
 // Front-matter introductions (USFM \id FRT / INT). Stored outside the book

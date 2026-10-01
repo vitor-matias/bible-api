@@ -1,5 +1,6 @@
 import type { createClient, SearchReply } from "redis"
 import { EMBEDDING_INDEX } from "../../util/embeddingIndex"
+import { jsonMGet } from "../../util/jsonMGet"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { generateEmbedding } from "../openai/embeddings"
 
@@ -74,18 +75,10 @@ export const semanticSearchVerses = async (
     (doc) => (doc.value as unknown as EmbeddingDocument).key,
   )
 
-  const verses: Verse[] = []
-  if (verseKeys.length > 0) {
-    // One round trip for the whole page. With the "$" path each entry comes
-    // back as a single-element array (or null for missing keys).
-    const versesData = await client.json.mGet(verseKeys, "$")
-    for (const doc of versesData) {
-      const verse = (doc as unknown as Verse[] | null)?.[0]
-      if (verse) {
-        verses.push(verse)
-      }
-    }
-  }
+  // One round trip for the whole page.
+  const verses = (await jsonMGet<Verse>(client, verseKeys)).filter(
+    (verse): verse is Verse => verse != null,
+  )
 
   return {
     verses,

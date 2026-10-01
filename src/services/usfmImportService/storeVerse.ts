@@ -8,7 +8,7 @@ import { getVerse, verseKey } from "../verse/getVerse"
 // leaves those untouched. trim() is deliberately Unicode-aware: at the ends of
 // a note it clears the stray non-breaking spaces and leading byte-order marks
 // this corpus carries, which are noise rather than typesetting.
-const collapseWhitespace = (value: string): string =>
+export const collapseWhitespace = (value: string): string =>
   value.replace(/[\t\n\r ]+/g, " ").trim()
 
 // \ft introduces the note body and \bd / \bdit only style it, so the markers
@@ -65,6 +65,23 @@ const parseFootnotePart = (
     text,
     reference: frMatch ? collapseWhitespace(frMatch[1]) : "",
   }
+}
+
+/**
+ * Reads a note's content (everything between `\f` and `\f*`) into footnote
+ * entries. \fp opens an additional paragraph of the same note; each part
+ * becomes its own entry. Asterisks survive: they are stripped only as part of
+ * a closing marker, so a literal "*" in the prose is kept.
+ */
+export const parseFootnote = (content: string): _Footnote[] => {
+  const footnotes: _Footnote[] = []
+  for (const [index, part] of content.split(/\\fp\s*/).entries()) {
+    const footnote = parseFootnotePart(part, index > 0)
+    if (footnote) {
+      footnotes.push(footnote)
+    }
+  }
+  return footnotes
 }
 
 export const storeVerse = async (
@@ -148,16 +165,7 @@ export const storeVerse = async (
         normalizedText: normalizeText(text),
       })
     } else if (verseObject.tag === "f") {
-      // \fp opens an additional paragraph of the same note; each part becomes
-      // its own footnote entry. Asterisks survive: they are stripped only as
-      // part of a closing marker, so a literal "*" in the prose is kept.
-      const parts = (verseObject.content ?? "").split(/\\fp\s*/)
-      for (const [index, part] of parts.entries()) {
-        const footnote = parseFootnotePart(part, index > 0)
-        if (footnote) {
-          verseData.text.push(footnote)
-        }
-      }
+      verseData.text.push(...parseFootnote(verseObject.content ?? ""))
     }
   }
 
