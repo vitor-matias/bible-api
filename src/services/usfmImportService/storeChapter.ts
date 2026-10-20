@@ -2,7 +2,7 @@ import type { createClient } from "redis"
 import { EMBEDDING_KEY_PREFIX } from "../../util/embeddingIndex"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
-import { generateEmbeddings } from "../openai/embeddings"
+import { generateEmbeddings } from "../gemini/embeddings"
 import { verseKey } from "../verse/getVerse"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
@@ -198,8 +198,8 @@ export const storeChapter = async (
   }
 }
 
-// Embeds a chapter's verses in one OpenAI call and writes the vectors in one
-// pipelined round trip. Throws if either step fails.
+// Embeds a chapter's verses (one Gemini request per 100) and writes the
+// vectors in one pipelined round trip. Throws if either step fails.
 export const embedAndStoreVerses = async (
   client: ReturnType<typeof createClient>,
   versesData: VerseForEmbedding[],

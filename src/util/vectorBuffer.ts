@@ -1,11 +1,15 @@
-// The model services/openai/embeddings.ts calls, the vector size it requests,
+// The model services/gemini/embeddings.ts calls, the vector size it requests,
 // and what the vector index (embeddingIndex.ts) is built for. They live beside
-// the encoder so a change to one cannot leave the others behind. The API is
-// asked for EMBEDDING_DIMENSIONS explicitly (1536 is text-embedding-3-small's
-// native size, so its output is unchanged), and a model that cannot produce
-// that size is rejected by the API instead of filling the index with vectors
-// it skips.
-export const EMBEDDING_MODEL = "text-embedding-3-small"
+// the encoder so a change to one cannot leave the others behind, and the
+// import marker in index.ts includes both, so changing either forces a
+// reimport rather than mixing two models' vectors in one index.
+//
+// gemini-embedding-2 natively returns 3072 dimensions. 1536 is a truncated
+// size it is trained to produce: on this corpus it ranked close to 3072
+// (src/scripts/embeddingEval) at half the memory, which a 1 GB Redis needs.
+// The relevance cut in services/search/semanticSearch.ts is calibrated for
+// this model and size.
+export const EMBEDDING_MODEL = "gemini-embedding-2"
 export const EMBEDDING_DIMENSIONS = 1536
 export const EMBEDDING_VECTOR_TYPE = "FLOAT32"
 

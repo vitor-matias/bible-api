@@ -5,7 +5,7 @@ import express from "express"
 import helmet from "helmet"
 import { createClient } from "redis"
 import setEndpoints from "./rest"
-import { generateEmbedding } from "./services/openai/embeddings"
+import { generateEmbedding } from "./services/gemini/embeddings"
 import { readBook } from "./services/usfmImportService/readBook"
 import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
 import { storeBook } from "./services/usfmImportService/storeBook"
@@ -18,15 +18,18 @@ import {
 } from "./util/importState"
 import { assertRedisModules } from "./util/requireRedisModules"
 import { parseTrustProxy } from "./util/trustProxy"
+import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "./util/vectorBuffer"
 
 require("dotenv").config()
 
 // Written only after a full import finishes, so a crash mid-import leaves the
 // marker absent and the next start reimports instead of serving partial data.
 // Chapters whose embeddings failed do not hold it back; see loadFilesIntoMemory.
-// The suffix is part of the storage format: bump it when the layout changes so
-// existing databases reimport instead of being read with the wrong assumptions.
-const IMPORT_COMPLETE_KEY = "importComplete:v3"
+// The suffix is part of the storage format: bump the version when the layout
+// changes so existing databases reimport instead of being read with the wrong
+// assumptions. The embedding model and size are part of it too: another
+// model's vectors fit the same index without error and rank as noise.
+const IMPORT_COMPLETE_KEY = `importComplete:v3:${EMBEDDING_MODEL}:${EMBEDDING_DIMENSIONS}`
 
 const app = express()
 app.disable("x-powered-by")
@@ -150,7 +153,7 @@ async function loadFilesIntoMemory(): Promise<boolean> {
       // nothing; carry on as a start without --reimport would and keep
       // serving it.
       console.error(
-        "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check OPENAI_API_KEY and restart with --reimport to retry.",
+        "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check GOOGLE_API_KEY and restart with --reimport to retry.",
         error,
       )
       return (await retryFailedEmbeddings(client)) === 0

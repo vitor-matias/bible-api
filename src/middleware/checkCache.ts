@@ -45,8 +45,9 @@ export const checkCache = async (
       // undefined has no JSON form; let Express handle it as it always did.
       if (payload === undefined) return originalJson(body)
 
-      // Only 200s are cached, so the status never needs storing alongside.
-      if (res.statusCode === 200) {
+      // Only 200s are cached, so the status never needs storing alongside. A
+      // handler sets skipCache for a response worth recomputing next time.
+      if (res.statusCode === 200 && !res.locals.skipCache) {
         if (Buffer.byteLength(payload) <= MAX_CACHEABLE_BYTES) {
           // SET carries its own expiry, so a key can never be left without a
           // TTL (volatile-lru only evicts keys that have one).

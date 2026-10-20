@@ -12,7 +12,7 @@ export const searchRateLimiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 })
 
-// Stricter limiter for semantic search (uses OpenAI API)
+// Stricter limiter for semantic search (calls the Gemini embedding API)
 export const semanticSearchRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10, // 10 requests per minute
@@ -23,7 +23,7 @@ export const semanticSearchRateLimiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 })
 
-// Applies the stricter limiter to semantic searches (which call the OpenAI API)
+// Applies the stricter limiter to semantic searches (which call the Gemini API)
 // and the regular limiter to everything else on the search endpoint.
 export const searchRateLimit = (
   req: Request,

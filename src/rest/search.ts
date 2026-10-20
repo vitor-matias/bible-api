@@ -40,13 +40,16 @@ export const searchVersesController = async (req: Request, res: Response) => {
     }
 
     try {
-      const result = await semanticSearchVerses(
+      const { page, degraded } = await semanticSearchVerses(
         client,
         searchText,
         pageNumber,
         limitNumber,
       )
-      return res.json(result)
+      // Searched as typed because the expansion failed: answer, but let the
+      // next request try again instead of serving this for a day.
+      if (degraded) res.locals.skipCache = true
+      return res.json(page)
     } catch (error) {
       console.error("Semantic search error:", error)
       return res.status(500).json({ error: "Semantic search failed" })
