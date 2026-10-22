@@ -258,7 +258,9 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     const files = fs
       .readdirSync(filePath)
       .filter((file) => file.endsWith(".usfm"))
-      .sort()
+      // By UTF-16 code unit, as a bare sort() would: a locale-aware compare
+      // could order names differently on machines with different locale data.
+      .sort((a, b) => Number(a > b) - Number(a < b))
 
     // An empty or wrongly mounted directory must not be "imported": the flush
     // below would wipe the data and the completion marker would make every
