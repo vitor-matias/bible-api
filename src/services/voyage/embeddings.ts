@@ -6,6 +6,28 @@ import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "../../util/vectorBuffer"
 // endpoint, which VOYAGE_BASE_URL sets.
 const DEFAULT_BASE_URL = "https://ai.mongodb.com/v1"
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"])
+
+// The SDK sends the API key as a Bearer header to whatever URL it is given, so
+// an override must use HTTPS. Plain HTTP is accepted only for a loopback host
+// (a local stub), where the request never leaves the machine.
+const checkBaseUrl = (value: string): string => {
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    throw new Error("VOYAGE_BASE_URL is not a valid URL")
+  }
+  const isLoopbackHttp =
+    url.protocol === "http:" && LOOPBACK_HOSTS.has(url.hostname)
+  if (url.protocol !== "https:" && !isLoopbackHttp) {
+    throw new Error(
+      "VOYAGE_BASE_URL must use https:// (http:// is allowed only for localhost)",
+    )
+  }
+  return value
+}
+
 let _voyage: VoyageAIClient | null = null
 
 const getClient = (): VoyageAIClient => {
@@ -18,7 +40,9 @@ const getClient = (): VoyageAIClient => {
     // per-chapter batches during import. Default retries (2) are kept.
     _voyage = new VoyageAIClient({
       apiKey: process.env.VOYAGE_API_KEY,
-      environment: process.env.VOYAGE_BASE_URL || DEFAULT_BASE_URL,
+      environment: process.env.VOYAGE_BASE_URL
+        ? checkBaseUrl(process.env.VOYAGE_BASE_URL)
+        : DEFAULT_BASE_URL,
       timeoutInSeconds: 30,
     })
   }
