@@ -59,7 +59,7 @@ describe("assertRedisModules", () => {
       { name: "search" },
     ])
 
-    await assertRedisModules(client)
+    await assert.doesNotReject(assertRedisModules(client))
   })
 
   it("names the modules a plain Redis lacks", async () => {
@@ -75,6 +75,6 @@ describe("assertRedisModules", () => {
       throw new Error("unknown command")
     })
 
-    await assertRedisModules(client)
+    await assert.doesNotReject(assertRedisModules(client))
   })
 })

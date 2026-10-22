@@ -113,7 +113,7 @@ describe("createTaskPool", () => {
   })
 
   it("drains at once when nothing was submitted", async () => {
-    await createTaskPool(3).drain()
+    await assert.doesNotReject(createTaskPool(3).drain())
   })
 
   it("rejects a limit that would start no workers", () => {
