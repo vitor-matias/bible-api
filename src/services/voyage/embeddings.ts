@@ -1,4 +1,5 @@
 import { VoyageAIClient } from "voyageai"
+import { createRateLimiter } from "../../util/concurrency"
 import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "../../util/vectorBuffer"
 
 // Model API keys created in MongoDB Atlas are served from ai.mongodb.com. A key
@@ -28,6 +29,18 @@ const checkBaseUrl = (value: string): string => {
   return value
 }
 
+// The embedding API allows 2,000 requests a minute. The SDK sends every HTTP
+// attempt, its own retries of a 408/429/5xx included, through `fetch`, so
+// spacing starts there keeps the whole process (import and searches alike)
+// under 1,800 a minute, even when a burst of failures is being retried.
+const MAX_REQUESTS_PER_MINUTE = 1_800
+const waitForRequestSlot = createRateLimiter(60_000 / MAX_REQUESTS_PER_MINUTE)
+
+const rateLimitedFetch: typeof fetch = async (input, init) => {
+  await waitForRequestSlot()
+  return fetch(input, init)
+}
+
 let _voyage: VoyageAIClient | null = null
 
 const getClient = (): VoyageAIClient => {
@@ -44,6 +57,7 @@ const getClient = (): VoyageAIClient => {
         ? checkBaseUrl(process.env.VOYAGE_BASE_URL)
         : DEFAULT_BASE_URL,
       timeoutInSeconds: 30,
+      fetch: rateLimitedFetch,
     })
   }
   return _voyage

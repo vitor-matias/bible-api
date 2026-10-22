@@ -30,11 +30,10 @@ require("dotenv").config()
 // existing databases reimport instead of being read with the wrong assumptions.
 const IMPORT_COMPLETE_KEY = "importComplete:v4"
 
-// The import embeds each chapter in its own request, in the background. The
-// embedding API allows 2,000 requests a minute: starts are spaced to stay
-// under 1,800 of them, with at most 16 in flight.
+// The import embeds each chapter in its own request, in the background, with
+// at most 16 in flight. The API's per-minute request limit is enforced in the
+// Voyage client (services/voyage/embeddings.ts), where retries count too.
 const EMBEDDING_CONCURRENCY = 16
-const EMBEDDING_MIN_INTERVAL_MS = 60_000 / 1_800
 
 const app = express()
 app.disable("x-powered-by")
@@ -281,10 +280,7 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
 
     // Books are stored one at a time, in order (their position numbers the
     // verses), while chapter embedding calls run behind them in the pool.
-    const embeddings = createTaskPool(
-      EMBEDDING_CONCURRENCY,
-      EMBEDDING_MIN_INTERVAL_MS,
-    )
+    const embeddings = createTaskPool(EMBEDDING_CONCURRENCY)
     const storeFile = async (file: string) => {
       console.log(file)
       const bibleData = await readBook(path.join(filePath, file))
