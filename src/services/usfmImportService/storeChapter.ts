@@ -76,6 +76,9 @@ export const storeChapter = async (
 
   const verseEntries = Object.entries(chapter).sort(compareVerseLabels)
 
+  // Sequential on purpose: each verse's number, the empty quote carried into
+  // the next verse and the order the section outline is read in all depend on
+  // storing the verses one at a time, in order.
   for (const [index, [verseLabel, verse]] of verseEntries.entries()) {
     // If the previous verse ended with an empty quote block, apply its tag
     // to the first object of the current verse if it's plain text.
@@ -113,7 +116,7 @@ export const storeChapter = async (
       for (const verseObject of Object.values(verse.verseObjects)) {
         if (verseObject.tag === "va") {
           if (labelForVerse !== "") {
-            const verseData = await storeInOrder(
+            const verseData = /* NOSONAR */ await storeInOrder(
               client,
               bookCode,
               bookNumber,
@@ -134,7 +137,7 @@ export const storeChapter = async (
       }
 
       if (labelForVerse !== "") {
-        const verseData = await storeInOrder(
+        const verseData = /* NOSONAR */ await storeInOrder(
           client,
           bookCode,
           bookNumber,
@@ -147,7 +150,7 @@ export const storeChapter = async (
         verseNumber++
       }
     } else if (verseLabel !== "front") {
-      const verseData = await storeInOrder(
+      const verseData = /* NOSONAR */ await storeInOrder(
         client,
         bookCode,
         bookNumber,
@@ -159,7 +162,7 @@ export const storeChapter = async (
       collectForEmbedding(versesData, verseData, verseNumber)
       verseNumber++
     } else {
-      await storeInOrder(
+      /* NOSONAR */ await storeInOrder(
         client,
         bookCode,
         bookNumber,
