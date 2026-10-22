@@ -17,9 +17,9 @@
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.3.0",
-    "openai": "^6.15.0",
     "redis": "^5.10.0",
-    "usfm-js": "^3.4.3"
+    "usfm-js": "^3.4.3",
+    "voyageai": "^0.4.0"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.10",

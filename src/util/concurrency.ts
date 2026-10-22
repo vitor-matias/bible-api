@@ -40,3 +40,85 @@ export const mapWithConcurrency = async <T, R>(
 
   return results
 }
+
+export type TaskPool = {
+  submit: (task: () => Promise<void>) => void
+  drain: () => Promise<void>
+}
+
+// Runs submitted tasks in the background with at most `limit` in flight.
+// Unlike mapWithConcurrency, the caller keeps submitting while earlier tasks
+// run. drain() resolves once every task has settled, or rejects with the first
+// task error; after an error, queued tasks are dropped instead of started.
+// Request rates are not this pool's concern: see createRateLimiter.
+export const createTaskPool = (limit: number): TaskPool => {
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new RangeError(
+      `Concurrency limit must be a positive integer: ${limit}`,
+    )
+  }
+
+  const queue: (() => Promise<void>)[] = []
+  const workers = new Set<Promise<void>>()
+  // Counted apart from `workers`: a worker leaves that set a few microtasks
+  // after its loop ends, and a task submitted in between would otherwise wait
+  // in the queue with no worker left to start it.
+  let active = 0
+  let failure: { error: unknown } | null = null
+
+  // Never rejects: an error is kept for drain(), so a pool nobody drains yet
+  // cannot raise an unhandled rejection. Nothing is awaited between the
+  // failure check and starting a task, so no task starts after a failure.
+  const work = async () => {
+    try {
+      while (!failure && queue.length > 0) {
+        const task = queue.shift() as () => Promise<void>
+        // Sequential on purpose: each worker runs one task at a time; the pool
+        // gets its concurrency from running `limit` workers side by side.
+        try {
+          await task() // NOSONAR
+        } catch (error) {
+          failure ??= { error }
+        }
+      }
+    } finally {
+      active--
+    }
+  }
+
+  return {
+    submit: (task) => {
+      queue.push(task)
+      if (active < limit) {
+        active++
+        const worker = work().finally(() => workers.delete(worker))
+        workers.add(worker)
+      }
+    },
+    drain: async () => {
+      // Looped on purpose: a task can submit more work, starting a worker
+      // that the earlier Promise.all did not include.
+      while (workers.size > 0) {
+        await Promise.all(workers) // NOSONAR
+      }
+      if (failure) throw failure.error
+    },
+  }
+}
+
+// Returns a function that resolves when the caller may start its next
+// request, spacing starts at least `minIntervalMs` apart across every caller
+// that shares it.
+export const createRateLimiter = (
+  minIntervalMs: number,
+): (() => Promise<void>) => {
+  let nextStart = 0
+  return async () => {
+    const now = Date.now()
+    const start = Math.max(now, nextStart)
+    nextStart = start + minIntervalMs
+    if (start > now) {
+      await new Promise((resolve) => setTimeout(resolve, start - now))
+    }
+  }
+}

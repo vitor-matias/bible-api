@@ -5,11 +5,12 @@ import express from "express"
 import helmet from "helmet"
 import { createClient } from "redis"
 import setEndpoints from "./rest"
-import { generateEmbedding } from "./services/openai/embeddings"
 import { readBook } from "./services/usfmImportService/readBook"
 import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
 import { storeBook } from "./services/usfmImportService/storeBook"
 import { EMBEDDING_FAILURES_KEY } from "./services/usfmImportService/storeChapter"
+import { generateQueryEmbedding } from "./services/voyage/embeddings"
+import { createTaskPool } from "./util/concurrency"
 import { verifyEmbeddingIndex } from "./util/embeddingIndex"
 import { flushDatabase } from "./util/flushDatabase"
 import {
@@ -27,7 +28,12 @@ require("dotenv").config()
 // Chapters whose embeddings failed do not hold it back; see loadFilesIntoMemory.
 // The suffix is part of the storage format: bump it when the layout changes so
 // existing databases reimport instead of being read with the wrong assumptions.
-const IMPORT_COMPLETE_KEY = "importComplete:v3"
+const IMPORT_COMPLETE_KEY = "importComplete:v4"
+
+// The import embeds each chapter in its own request, in the background, with
+// at most 16 in flight. The API's per-minute request limit is enforced in the
+// Voyage client (services/voyage/embeddings.ts), where retries count too.
+const EMBEDDING_CONCURRENCY = 16
 
 const app = express()
 app.disable("x-powered-by")
@@ -126,7 +132,7 @@ const startImport = async (): Promise<void> => {
   // primary data, but mark the process degraded and refuse semantic search.
   setImportState("degraded")
 
-  // Re-embedding runs after the data is already being served: it is one OpenAI
+  // Re-embedding runs after the data is already being served: it is one Voyage
   // call per failed chapter, and an outage during the import can leave
   // hundreds of them — minutes of 503s if the start waited for it.
   if (outcome === "embeddingsPending") {
@@ -229,7 +235,7 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // removes, so find out first, while nothing has been touched, that they
     // can be generated. A missing, rotated or out-of-quota key throws here.
     try {
-      await generateEmbedding("ping")
+      await generateQueryEmbedding("ping")
     } catch (error) {
       if (!alreadyLoaded) {
         throw error
@@ -238,7 +244,7 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
       // nothing; carry on as a start without --reimport would and keep
       // serving it.
       console.error(
-        "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check OPENAI_API_KEY and restart with --reimport to retry.",
+        "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check VOYAGE_API_KEY and restart with --reimport to retry.",
         error,
       )
       return await existingDataOutcome(client)
@@ -272,17 +278,31 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // chapters whose embeddings failed.
     await flushDatabase()
 
-    const chunkSize = 1
-    for (let i = 0; i < files.length; i += chunkSize) {
-      const chunk = files.slice(i, i + chunkSize)
-      await Promise.all(
-        chunk.map(async (file) => {
-          console.log(file)
-          const bibleData = await readBook(path.join(filePath, file))
-          await storeBook(client, bibleData, file)
-        }),
-      )
+    // Books are stored one at a time, in order (their position numbers the
+    // verses), while chapter embedding calls run behind them in the pool.
+    const embeddings = createTaskPool(EMBEDDING_CONCURRENCY)
+    const storeFile = async (file: string) => {
+      console.log(file)
+      const bibleData = await readBook(path.join(filePath, file))
+      await storeBook(client, bibleData, file, embeddings)
     }
+    try {
+      const chunkSize = 1
+      for (let i = 0; i < files.length; i += chunkSize) {
+        const chunk = files.slice(i, i + chunkSize)
+        // Sequential on purpose: each book's position in the "books" list
+        // numbers its verses, so books must be stored in file order.
+        await Promise.all(chunk.map(storeFile)) // NOSONAR
+      }
+    } catch (error) {
+      // Let in-flight embedding calls settle before the client is closed
+      // under them; the storage error is the one worth reporting.
+      await embeddings.drain().catch(() => {})
+      throw error
+    }
+    // Every chapter's embedding must have landed (or been recorded as failed)
+    // before the failure set is read below.
+    await embeddings.drain()
 
     // A chapter whose embedding call failed is recorded in Redis rather than
     // blocking the marker: the primary data is complete, and those chapters

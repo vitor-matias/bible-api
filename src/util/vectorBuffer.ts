@@ -1,12 +1,13 @@
-// The model services/openai/embeddings.ts calls, the vector size it requests,
+// The model services/voyage/embeddings.ts calls, the vector size it requests,
 // and what the vector index (embeddingIndex.ts) is built for. They live beside
 // the encoder so a change to one cannot leave the others behind. The API is
-// asked for EMBEDDING_DIMENSIONS explicitly (1536 is text-embedding-3-small's
-// native size, so its output is unchanged), and a model that cannot produce
-// that size is rejected by the API instead of filling the index with vectors
-// it skips.
-export const EMBEDDING_MODEL = "text-embedding-3-small"
-export const EMBEDDING_DIMENSIONS = 1536
+// asked for EMBEDDING_DIMENSIONS explicitly (1024 is voyage-4-large's default;
+// it also offers 256, 512 and 2048), and a size the model cannot produce is
+// rejected by the API instead of filling the index with vectors it skips.
+// Changing either value invalidates every stored vector, so bump
+// IMPORT_COMPLETE_KEY in index.ts with it.
+export const EMBEDDING_MODEL = "voyage-4-large"
+export const EMBEDDING_DIMENSIONS = 1024
 export const EMBEDDING_VECTOR_TYPE = "FLOAT32"
 
 // RediSearch reads a FLOAT32 vector as its raw bytes. Stored embeddings and
