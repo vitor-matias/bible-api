@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "test": "tsc && node --test \"dist/**/*.test.js\"",
+    "test:coverage": "tsc --sourceMap && mkdir -p coverage && node --test --enable-source-maps --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \"dist/**/*.test.js\"",
     "start": "tsc && node dist/index.js",
     "biome": "npx @biomejs/biome check --write ./src"
   },
