@@ -1,8 +1,9 @@
 import type { createClient } from "redis"
+import type { TaskPool } from "../../util/concurrency"
 import { encodeVector } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
-import { generateEmbeddings } from "../openai/embeddings"
 import { embeddingKey } from "../search/embeddingKey"
+import { generateDocumentEmbeddings } from "../voyage/embeddings"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
 // Chapters whose embeddings failed transiently, as "bookId:chapter" members.
@@ -54,6 +55,7 @@ export const storeChapter = async (
   bookNumber: number,
   chapterNumber: number,
   chapter: USFMChapter,
+  embeddings: TaskPool,
 ): Promise<void> => {
   let verseNumber = 1
   const versesData: VerseForEmbedding[] = []
@@ -177,38 +179,48 @@ export const storeChapter = async (
     String(Math.max(0, verseNumber - 1)),
   )
 
-  // Generate embeddings in batch for all verses in the chapter
+  // The chapter's verses are embedded in one batch, in the background: the
+  // import goes on storing later chapters instead of waiting on the API. The
+  // caller drains the pool before it reads the failure set.
   if (versesData.length > 0) {
-    console.log(
-      `Generating embeddings for chapter ${chapterNumber} with ${versesData.length} verses...`,
-    )
-    try {
-      await embedAndStoreVerses(client, versesData)
-    } catch (error) {
-      // Never stop the import over embeddings: the primary data matters more.
-      // The chapter is recorded and re-embedded on a later start, and semantic
-      // search misses its verses until then.
-      console.error(
-        `Failed to generate embeddings for chapter ${chapterNumber}:`,
-        error,
+    embeddings.submit(async () => {
+      console.log(
+        `Generating embeddings for ${bookCode} ${chapterNumber} with ${versesData.length} verses...`,
       )
-      await client.sAdd(EMBEDDING_FAILURES_KEY, `${bookCode}:${chapterNumber}`)
-    }
+      try {
+        await embedAndStoreVerses(client, versesData)
+      } catch (error) {
+        // Never stop the import over embeddings: the primary data matters
+        // more. The chapter is recorded and re-embedded on a later start, and
+        // semantic search stays disabled until then.
+        console.error(
+          `Failed to generate embeddings for ${bookCode} ${chapterNumber}:`,
+          error,
+        )
+        await client.sAdd(
+          EMBEDDING_FAILURES_KEY,
+          `${bookCode}:${chapterNumber}`,
+        )
+      }
+    })
   }
 }
 
-// Embeds a chapter's verses in one OpenAI call and writes the vectors in one
+// Embeds a chapter's verses in one Voyage call and writes the vectors in one
 // pipelined round trip, as raw float32 buffers (see vectorBuffer.ts) rather
 // than RedisJSON. Throws if either step fails.
 export const embedAndStoreVerses = async (
   client: ReturnType<typeof createClient>,
   versesData: VerseForEmbedding[],
 ): Promise<void> => {
-  const embeddings = await generateEmbeddings(versesData.map((v) => v.text))
+  const embeddings = await generateDocumentEmbeddings(
+    versesData.map((v) => v.text),
+  )
 
-  // generateEmbeddings leaves [] for any entry the API response lacked. Writing
-  // the rest would count the chapter as embedded while some verses have no
-  // vector, so treat a partial response as a failure before writing anything.
+  // generateDocumentEmbeddings leaves [] for any entry the API response
+  // lacked. Writing the rest would count the chapter as embedded while some
+  // verses have no vector, so treat a partial response as a failure before
+  // writing anything.
   const missing = versesData.filter((_, i) => !embeddings[i]?.length).length
   if (missing > 0) {
     throw new Error(

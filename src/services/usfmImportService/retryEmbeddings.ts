@@ -62,7 +62,7 @@ export const retryFailedEmbeddings = async (
     if (consecutiveFailures >= MAX_CONSECUTIVE_RETRY_FAILURES) break
 
     // Sequential on purpose: the loop must stop after repeated failures
-    // instead of firing an OpenAI request for every remaining chapter.
+    // instead of firing a Voyage request for every remaining chapter.
     const retried = await retryChapter(client, member) // NOSONAR
     consecutiveFailures = retried ? 0 : consecutiveFailures + 1
   }

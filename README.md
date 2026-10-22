@@ -31,8 +31,9 @@ npm start              # compiles, then runs
 |---|---|
 | `DB_URL` | Redis-compatible server, e.g. `redis://localhost:6379` (`rediss://` for TLS) |
 | `PATH_TO_TEXTS` | Folder of USFM files. Needed to import; not needed to serve |
-| `OPENAI_API_KEY` | Embeddings: every verse at import, every query at search time |
-| `EMBEDDING_DIMENSIONS` | Vector size, default `512` (8 to 3072). Changing it needs a reimport |
+| `VOYAGE_API_KEY` | Embeddings (Voyage `voyage-4-large`): every verse at import, every query at search time |
+| `VOYAGE_BASE_URL` | Optional. The default serves keys created in MongoDB Atlas; a key from the Voyage AI platform, or one scoped to a geography, needs its own endpoint. Must be `https://` (plain `http://` only for localhost, for the stub) |
+| `EMBEDDING_DIMENSIONS` | Vector size: `256`, `512` (default), `1024` or `2048`, the sizes the model offers. Changing it needs a reimport |
 | `PORT` | Default `3000` |
 | `TRUST_PROXY` | Set behind a proxy (a hop count, e.g. `1`, or an address) so rate limits see real client IPs. `true` is rejected: it would trust every X-Forwarded-For entry |
 | `CORS_ORIGIN` | Comma-separated allowed origins; open to all if unset |
@@ -52,13 +53,18 @@ waits for `npm run import`. A completion marker with no verses behind it is
 ignored, so a database like that counts as empty and is imported (or waited for)
 again.
 
-The import first checks that the folder holds `.usfm` files and that OpenAI
+The import first checks that the folder holds `.usfm` files and that Voyage
 answers, so a wrong folder or a bad key fails before anything is deleted. Then it
-flushes the database and embeds every verse, one OpenAI call per chapter: expect
-several minutes and a few cents. A chapter whose embedding call fails does not
-hold up the rest: it is recorded instead, served as `degraded`, and retried —
-once right away, then again on every later start — until it succeeds, rather
-than flushing and reimporting the whole corpus over a handful of chapters.
+flushes the database and embeds every verse, one Voyage request per chapter, up
+to 16 at a time and under Voyage's per-minute request limit. A chapter whose
+embedding call fails does not hold up the rest: it is recorded instead, served as
+`degraded`, and retried — once right away, then again on every later start —
+until it succeeds, rather than flushing and reimporting the whole corpus over a
+handful of chapters.
+
+Vectors from one embedding model mean nothing to another, so a database imported
+with a different model (or an earlier version of this API) is detected by its
+completion marker and reimported rather than read.
 
 **Restart the API after re-importing.** The search index is loaded into memory at
 startup and is not refreshed while the process runs.
@@ -131,7 +137,7 @@ text and one vector per verse), so the database needs no search features.
   the divine-name split in the source ("ao" then "Senhor"). Section headings and
   cross-references are searchable but never joined to the verse text; footnotes
   are not searched. Results are in verse order.
-- **Semantic** embeds the query with OpenAI and ranks verses by cosine similarity.
+- **Semantic** embeds the query with Voyage and ranks verses by cosine similarity.
 
 ## Sizing
 
@@ -145,12 +151,12 @@ cache survives a redeploy: clear it after changing what an endpoint returns.
 ```bash
 npm test                          # unit tests (Node's test runner)
 npm run biome                     # lint and format
-node scripts/openai-stub.mjs      # fake embeddings: no key, no cost
+node scripts/voyage-stub.mjs      # fake embeddings: no key, no cost
 node scripts/bench.mjs <label> <base url>   # latency and throughput
 ```
 
-To run everything locally without OpenAI, start the stub, then start the API and
-the import with `OPENAI_API_KEY=stub OPENAI_BASE_URL=http://localhost:4011/v1`.
+To run everything locally without Voyage, start the stub, then start the API and
+the import with `VOYAGE_API_KEY=stub VOYAGE_BASE_URL=http://localhost:4011/v1`.
 The stub returns random vectors, so semantic results are meaningless, but
 everything else is real. `scripts/bench.mjs` needs the API started with
 `TRUST_PROXY=1`, because it sends a different client IP with every request,

@@ -1,7 +1,7 @@
 import type { createClient } from "redis"
 import { mGetJson } from "../../util/jsonStore"
 import { toQueryVector } from "../../util/vectorBuffer"
-import { generateEmbedding } from "../openai/embeddings"
+import { generateQueryEmbedding } from "../voyage/embeddings"
 import { getVectorIndex, nearest } from "./searchIndex"
 
 // The search returns at most this many results; results beyond this offset are
@@ -28,7 +28,7 @@ export const semanticSearchVerses = async (
     }
   }
 
-  const queryVector = toQueryVector(await generateEmbedding(search))
+  const queryVector = toQueryVector(await generateQueryEmbedding(search))
 
   // Always rank the full window: sizing it to the requested page would make
   // `total` (and therefore `totalPages`) shrink to that page and hide the rest

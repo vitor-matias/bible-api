@@ -8,10 +8,10 @@ import {
   toQueryVector,
 } from "./vectorBuffer"
 
-// Read lazily on first use, so this applies to every test in the file. 8 is the
-// smallest dimension count the setting accepts.
-process.env.EMBEDDING_DIMENSIONS = "8"
-const DIMENSIONS = 8
+// Read lazily on first use, so this applies to every test in the file. 256 is
+// the smallest size the setting accepts.
+process.env.EMBEDDING_DIMENSIONS = "256"
+const DIMENSIONS = 256
 
 // A vector of the configured length that starts with `values`, zero after that.
 const vector = (...values: number[]): number[] => [
@@ -29,15 +29,34 @@ describe("parseEmbeddingDimensions", () => {
     assert.equal(parseEmbeddingDimensions("  "), 512)
   })
 
-  it("accepts an integer in range", () => {
-    assert.equal(parseEmbeddingDimensions("1536"), 1536)
-    assert.equal(parseEmbeddingDimensions("8"), 8)
+  it("accepts each size the model offers", () => {
+    for (const size of [256, 512, 1024, 2048]) {
+      assert.equal(parseEmbeddingDimensions(String(size)), size)
+    }
   })
 
-  it("rejects anything that is not a sensible dimension count", () => {
-    for (const value of ["abc", "1.5", "7", "3073", "-512", "0"]) {
+  it("rejects any other size, which the API would refuse chapter by chapter", () => {
+    // 1536 was OpenAI's size and 768 is a common one; neither is offered here.
+    for (const value of [
+      "1536",
+      "768",
+      "8",
+      "255",
+      "4096",
+      "abc",
+      "1.5",
+      "-512",
+      "0",
+    ]) {
       assert.throws(() => parseEmbeddingDimensions(value), RangeError, value)
     }
+  })
+
+  it("names the sizes it would have accepted", () => {
+    assert.throws(
+      () => parseEmbeddingDimensions("1536"),
+      /256, 512, 1024, 2048/,
+    )
   })
 })
 
@@ -76,8 +95,14 @@ describe("vector encoding", () => {
   })
 
   it("rejects a vector of the wrong length instead of storing it", () => {
-    assert.throws(() => encodeVector([1, 2, 3]), /Expected a 8-dimension/)
-    assert.throws(() => encodeVector(new Array<number>(9).fill(1)), /got 9/)
+    assert.throws(
+      () => encodeVector([1, 2, 3]),
+      new RegExp(`Expected a ${DIMENSIONS}-dimension`),
+    )
+    assert.throws(
+      () => encodeVector(new Array<number>(DIMENSIONS + 1).fill(1)),
+      new RegExp(`got ${DIMENSIONS + 1}`),
+    )
   })
 
   it("refuses a stored buffer of the wrong size and leaves the target alone", () => {
@@ -104,6 +129,9 @@ describe("toQueryVector", () => {
   })
 
   it("rejects a query of the wrong length", () => {
-    assert.throws(() => toQueryVector([1, 2]), /Expected a 8-dimension/)
+    assert.throws(
+      () => toQueryVector([1, 2]),
+      new RegExp(`Expected a ${DIMENSIONS}-dimension`),
+    )
   })
 })

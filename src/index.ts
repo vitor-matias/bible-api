@@ -149,7 +149,7 @@ function createDbClient() {
 // regeneration) when data is already present, unless the process is started
 // with --reimport. Resolves to the state the API should report right away: a
 // chapter still recorded as failed does not hold this up (see
-// retryEmbeddingsInBackground below) — re-embedding can mean one OpenAI call
+// retryEmbeddingsInBackground below) — re-embedding can mean one Voyage call
 // per failed chapter, and an outage during the import can leave hundreds of
 // them, which would otherwise be minutes of 503s on every single start.
 async function loadData(): Promise<ImportState> {

@@ -7,7 +7,10 @@ type Client = ReturnType<typeof createClient>
 // The suffix is part of the storage format: bump it when the layout changes so
 // existing databases reimport instead of being read with the wrong assumptions.
 // v3: plain string values and binary vectors, no RedisJSON or RediSearch.
-export const IMPORT_COMPLETE_KEY = "importComplete:v3"
+// v4: vectors from voyage-4-large (document/query input types). Another model's
+// vectors are not comparable with these, even at the same size, so a database
+// holding them has to be reimported, not read.
+export const IMPORT_COMPLETE_KEY = "importComplete:v4"
 
 // True when an import finished AND the database really holds verses. The marker
 // alone is not enough: an import of a folder with no texts used to write it too,

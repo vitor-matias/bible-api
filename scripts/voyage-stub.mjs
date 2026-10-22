@@ -1,15 +1,15 @@
-// A local stand-in for OpenAI's POST /v1/embeddings, so the whole API (import,
+// A local stand-in for Voyage's POST /v1/embeddings, so the whole API (import,
 // startup, semantic search) can run with no API key and no cost.
 //
-//   node scripts/openai-stub.mjs
-//   OPENAI_API_KEY=stub OPENAI_BASE_URL=http://localhost:4011/v1 npm run import
+//   node scripts/voyage-stub.mjs
+//   VOYAGE_API_KEY=stub VOYAGE_BASE_URL=http://localhost:4011/v1 npm run import
 //
 // It returns RANDOM unit vectors of the requested size. The import, memory use
 // and timing are real, but the semantic search results are meaningless: to judge
 // their quality, use the real API.
 //
 // STUB_PORT (default 4011) and STUB_DIM (default 512) configure it; a request's
-// own `dimensions` parameter wins over STUB_DIM, like the real API's.
+// own `output_dimension` wins over STUB_DIM, like the real API's.
 import { randomFillSync } from "node:crypto"
 import { createServer } from "node:http"
 
@@ -51,37 +51,26 @@ createServer((req, res) => {
   req.on("end", () => {
     const body = JSON.parse(Buffer.concat(chunks).toString() || "{}")
     const inputs = Array.isArray(body.input) ? body.input : [body.input]
-    // The official SDK asks for base64 unless told otherwise.
-    const asBase64 = body.encoding_format === "base64"
-    const dimensions = Number(body.dimensions) || DEFAULT_DIMENSIONS
+    const dimensions = Number(body.output_dimension) || DEFAULT_DIMENSIONS
 
-    const data = inputs.map((_, index) => {
-      const vector = randomUnitVector(dimensions)
-      return {
-        object: "embedding",
-        index,
-        embedding: asBase64
-          ? Buffer.from(
-              vector.buffer,
-              vector.byteOffset,
-              vector.byteLength,
-            ).toString("base64")
-          : Array.from(vector),
-      }
-    })
+    const data = inputs.map((_, index) => ({
+      object: "embedding",
+      index,
+      embedding: Array.from(randomUnitVector(dimensions)),
+    }))
 
     res.writeHead(200, { "content-type": "application/json" })
     res.end(
       JSON.stringify({
         object: "list",
         data,
-        model: "text-embedding-3-small",
-        usage: { prompt_tokens: inputs.length, total_tokens: inputs.length },
+        model: body.model ?? "voyage-4-large",
+        usage: { total_tokens: inputs.length },
       }),
     )
   })
 }).listen(PORT, "127.0.0.1", () =>
   console.log(
-    `OpenAI embeddings stub on http://127.0.0.1:${PORT}/v1 (${DEFAULT_DIMENSIONS} dimensions)`,
+    `Voyage embeddings stub on http://127.0.0.1:${PORT}/v1 (${DEFAULT_DIMENSIONS} dimensions)`,
   ),
 )

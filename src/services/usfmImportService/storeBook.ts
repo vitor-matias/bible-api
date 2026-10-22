@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import type { TaskPool } from "../../util/concurrency"
 import { setJson } from "../../util/jsonStore"
 import { getBookHeader } from "../book/getBookHeader"
 import { getBookId } from "../book/getBookId"
@@ -11,11 +12,14 @@ import {
 } from "./storeIntro"
 
 // The caller owns the connection: opening one client per source file cost 90
-// connections and handshakes per import, several of them for two commands.
+// connections and handshakes per import, several of them for two commands. It
+// also owns `embeddings`, which runs each chapter's embedding call in the
+// background and must be drained before the import counts as finished.
 export const storeBook = async (
   client: ReturnType<typeof createClient>,
   usfmBook: USFMBook,
   sourceFile: string,
+  embeddings: TaskPool,
 ): Promise<void> => {
   const bookId = getBookId(usfmBook)?.toLowerCase()
 
@@ -45,14 +49,12 @@ export const storeBook = async (
 
   await setJson(client, `book:${bookId}`, book)
 
-  for (const [number, chapter] of Object.entries(usfmBook.chapters)) {
-    await storeChapter(
-      client,
-      bookId,
-      bookCount,
-      Number.parseInt(number, 10),
-      chapter,
-    )
+  for (const [label, chapter] of Object.entries(usfmBook.chapters)) {
+    const number = Number.parseInt(label, 10)
+    // Sequential on purpose: a chapter's heading can carry over to the next
+    // chapter's title, so chapters are stored in order. Their embedding calls
+    // already run concurrently in the pool.
+    await storeChapter(client, bookId, bookCount, number, chapter, embeddings) // NOSONAR
   }
 }
 

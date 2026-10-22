@@ -1,7 +1,8 @@
 import * as path from "node:path"
 import type { createClient } from "redis"
+import { createTaskPool } from "../../util/concurrency"
 import { flushDatabase } from "../../util/flushDatabase"
-import { generateEmbedding } from "../openai/embeddings"
+import { generateQueryEmbedding } from "../voyage/embeddings"
 import { IMPORT_COMPLETE_KEY } from "./importMarker"
 import { listUsfmFiles } from "./listUsfmFiles"
 import { readBook } from "./readBook"
@@ -9,6 +10,11 @@ import { retryFailedEmbeddings } from "./retryEmbeddings"
 import { storeBook } from "./storeBook"
 
 type Client = ReturnType<typeof createClient>
+
+// How many chapters' embedding requests may be in flight at once. The API's
+// per-minute request limit is enforced in the Voyage client
+// (services/voyage/embeddings.ts), where retries count too.
+const EMBEDDING_CONCURRENCY = 16
 
 // Flushes the database, then loads every USFM book in `textsPath` into it,
 // embedding each verse. A chapter whose embedding call fails is recorded
@@ -25,10 +31,10 @@ export const importBible = async (
   // or one holding other files) must fail here, not after the flush.
   const files = listUsfmFiles(textsPath)
 
-  // The import deletes everything before it embeds anything, so confirm OpenAI
+  // The import deletes everything before it embeds anything, so confirm Voyage
   // answers first: a missing, rotated or out-of-quota key then fails while any
   // old data still serves.
-  await generateEmbedding("teste")
+  await generateQueryEmbedding("ping")
 
   // flushDatabase also clears any stale completion marker and the record of
   // chapters whose embeddings failed.
@@ -36,14 +42,29 @@ export const importBible = async (
 
   console.log(textsPath)
 
-  // One book at a time: storeBook embeds a chapter's verses with its own
-  // OpenAI call, and running every book's chapters concurrently would fire
-  // the whole corpus at OpenAI at once instead of respecting its rate limits.
-  for (const file of files) {
-    console.log(file)
-    const bibleData = await readBook(path.join(textsPath, file)) // NOSONAR
-    await storeBook(client, bibleData, file) // NOSONAR
+  // Each chapter's embedding call runs in the pool, behind the storing of the
+  // chapters that follow it, instead of the import waiting on the API for every
+  // one in turn.
+  const embeddings = createTaskPool(EMBEDDING_CONCURRENCY)
+
+  try {
+    // One book at a time, in file order: a book's position in the "books" list
+    // numbers its verses, so storing them out of order would renumber them.
+    for (const file of files) {
+      console.log(file)
+      const bibleData = await readBook(path.join(textsPath, file)) // NOSONAR
+      await storeBook(client, bibleData, file, embeddings) // NOSONAR
+    }
+  } catch (error) {
+    // Let the embedding calls already in flight settle before the caller closes
+    // the client under them; the storage error is the one worth reporting.
+    await embeddings.drain().catch(() => {})
+    throw error
   }
+
+  // Every chapter's embedding has to have landed, or been recorded as failed,
+  // before the marker is written and the failure set is read below.
+  await embeddings.drain()
 
   // The primary (verse) data is complete regardless of embedding failures, so
   // the marker is written now: a later start serves it immediately instead of

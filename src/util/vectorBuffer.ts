@@ -1,12 +1,17 @@
-// text-embedding-3-small returns 1536 numbers per text, and its `dimensions`
-// request parameter can shorten that. Fewer dimensions shrink the vectors held
-// in the database and in memory in proportion: 512 keeps them at a third of the
-// size, which is what lets the whole corpus fit a small Valkey plan and a small
-// API instance. Changing this needs a reimport, because stored vectors and the
-// query vector must have the same length.
+// The model services/voyage/embeddings.ts calls, and the vector sizes it can
+// produce: voyage-4-large defaults to 1024 and also offers 256, 512 and 2048.
+// Any other size is rejected by the API, which would fail every chapter of an
+// import one by one, so it is rejected here instead, once, at startup. Shorter
+// vectors shrink what the database and the API's memory hold in proportion: 512
+// is half the default, which is what lets the whole corpus fit a small Valkey
+// plan and a small API instance.
+//
+// Changing the model or the size makes every stored vector unusable (another
+// model's vectors share no space with this one's, and the sizes must match the
+// query's), so bump IMPORT_COMPLETE_KEY in importMarker.ts along with it.
+export const EMBEDDING_MODEL = "voyage-4-large"
+const SUPPORTED_EMBEDDING_DIMENSIONS: readonly number[] = [256, 512, 1024, 2048]
 const DEFAULT_EMBEDDING_DIMENSIONS = 512
-const MIN_EMBEDDING_DIMENSIONS = 8
-const MAX_EMBEDDING_DIMENSIONS = 3072
 
 export const parseEmbeddingDimensions = (raw: string | undefined): number => {
   if (raw === undefined || raw.trim() === "") {
@@ -15,13 +20,9 @@ export const parseEmbeddingDimensions = (raw: string | undefined): number => {
 
   const value = Number(raw)
 
-  if (
-    !Number.isInteger(value) ||
-    value < MIN_EMBEDDING_DIMENSIONS ||
-    value > MAX_EMBEDDING_DIMENSIONS
-  ) {
+  if (!SUPPORTED_EMBEDDING_DIMENSIONS.includes(value)) {
     throw new RangeError(
-      `EMBEDDING_DIMENSIONS must be an integer between ${MIN_EMBEDDING_DIMENSIONS} and ${MAX_EMBEDDING_DIMENSIONS}: "${raw}"`,
+      `EMBEDDING_DIMENSIONS must be one of ${SUPPORTED_EMBEDDING_DIMENSIONS.join(", ")}: "${raw}"`,
     )
   }
 
