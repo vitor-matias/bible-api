@@ -67,26 +67,32 @@ const getClient = (): VoyageAIClient => {
 // different retrieval prompt to each, and both sides need it for the best
 // ranking.
 //
-// The model is contextual: `verses` must be one chapter's verses in order.
-// They are sent as the chunks of a single document, so each verse's vector
-// also reflects the verses around it (a verse that only says "He rebuked the
-// wind" still lands near a search for Jesus calming the storm).
+// A piece of a contextual document, in reading order. Only chunks marked
+// `embed` get a vector back; the others (the book, chapter and section
+// headings) are there as context for the chunks around them.
+export type DocumentChunk = { text: string; embed: boolean }
+
+// The model is contextual: `chunks` must be one chapter, in order. They are
+// sent as a single document, so each verse's vector also reflects what
+// surrounds it (a verse that only says "He rebuked the wind" still lands near a
+// search for Jesus calming the storm). Returns one vector per `embed` chunk, in
+// order, or [] where the chunk was blank or the response lacked it.
 export const generateChapterEmbeddings = async (
-  verses: string[],
+  chunks: DocumentChunk[],
 ): Promise<number[][]> => {
-  if (!verses || verses.length === 0) {
-    return []
+  // The API rejects empty chunks, so blank ones are not sent; a blank verse
+  // chunk still holds its place in the result.
+  const sent: { text: string; resultIndex: number | null }[] = []
+  let embedCount = 0
+  for (const chunk of chunks) {
+    const resultIndex = chunk.embed ? embedCount++ : null
+    const text = chunk.text.trim()
+    if (text) sent.push({ text, resultIndex })
   }
 
-  const validVerses: { index: number; text: string }[] = []
-  verses.forEach((text, index) => {
-    if (text && text.trim().length > 0) {
-      validVerses.push({ index, text: text.trim() })
-    }
-  })
-
-  if (validVerses.length === 0) {
-    return verses.map(() => [])
+  const result: number[][] = Array.from({ length: embedCount }, () => [])
+  if (!sent.some((s) => s.resultIndex !== null)) {
+    return result
   }
 
   try {
@@ -94,18 +100,17 @@ export const generateChapterEmbeddings = async (
       model: EMBEDDING_MODEL,
       outputDimension: EMBEDDING_DIMENSIONS,
       inputType: "document",
-      inputs: [validVerses.map((v) => v.text)],
+      inputs: [sent.map((s) => s.text)],
     })
 
     // Map by the chunk index the API reports rather than by array position
     // (which is all the SDK's own result uses), so a reordered or unexpectedly
     // sized response can't pair verses with the wrong vector.
-    const result: number[][] = verses.map(() => [])
     for (const item of rawResponse.data?.[0]?.data ?? []) {
-      const source =
-        item.index === undefined ? undefined : validVerses[item.index]
-      if (source && item.embedding) {
-        result[source.index] = item.embedding
+      const resultIndex =
+        item.index === undefined ? null : sent[item.index]?.resultIndex
+      if (resultIndex != null && item.embedding) {
+        result[resultIndex] = item.embedding
       }
     }
 

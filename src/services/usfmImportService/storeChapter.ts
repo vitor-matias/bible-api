@@ -5,6 +5,7 @@ import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { verseKey } from "../verse/getVerse"
 import { generateChapterEmbeddings } from "../voyage/embeddings"
+import { chapterDocument, saveChapterOutline } from "./chapterDocument"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
 // Chapters whose embeddings failed transiently, as "bookId:chapter" members.
@@ -60,6 +61,14 @@ export const storeChapter = async (
 ): Promise<void> => {
   let verseNumber = 1
   const versesData: VerseForEmbedding[] = []
+  // Every verse as stored, verse 0 included, in order: the chapter's section
+  // outline is read from them.
+  const storedVerses: Verse[] = []
+  const storeInOrder = async (...args: Parameters<typeof storeVerse>) => {
+    const verseData = await storeVerse(...args)
+    storedVerses.push(verseData)
+    return verseData
+  }
 
   // Tracks an empty quote (like \q1) that appears at the end of a verse, so it can
   // be applied to the beginning of the next verse.
@@ -104,7 +113,7 @@ export const storeChapter = async (
       for (const verseObject of Object.values(verse.verseObjects)) {
         if (verseObject.tag === "va") {
           if (labelForVerse !== "") {
-            const verseData = await storeVerse(
+            const verseData = await storeInOrder(
               client,
               bookCode,
               bookNumber,
@@ -125,7 +134,7 @@ export const storeChapter = async (
       }
 
       if (labelForVerse !== "") {
-        const verseData = await storeVerse(
+        const verseData = await storeInOrder(
           client,
           bookCode,
           bookNumber,
@@ -138,7 +147,7 @@ export const storeChapter = async (
         verseNumber++
       }
     } else if (verseLabel !== "front") {
-      const verseData = await storeVerse(
+      const verseData = await storeInOrder(
         client,
         bookCode,
         bookNumber,
@@ -150,7 +159,7 @@ export const storeChapter = async (
       collectForEmbedding(versesData, verseData, verseNumber)
       verseNumber++
     } else {
-      await storeVerse(
+      await storeInOrder(
         client,
         bookCode,
         bookNumber,
@@ -162,7 +171,7 @@ export const storeChapter = async (
     }
   }
   if (chapter.front === null) {
-    await storeVerse(
+    await storeInOrder(
       client,
       bookCode,
       bookNumber,
@@ -179,6 +188,9 @@ export const storeChapter = async (
     chapterVerseMaxKey(bookCode, chapterNumber),
     String(Math.max(0, verseNumber - 1)),
   )
+
+  // Before the chapter's embedding is queued: its document reads the outline.
+  await saveChapterOutline(client, bookCode, chapterNumber, storedVerses)
 
   // The chapter's verses are embedded in one batch, in the background: the
   // import goes on storing later chapters instead of waiting on the API. The
@@ -214,7 +226,7 @@ export const embedAndStoreVerses = async (
   versesData: VerseForEmbedding[],
 ): Promise<void> => {
   const embeddings = await generateChapterEmbeddings(
-    versesData.map((v) => v.text),
+    await chapterDocument(client, versesData),
   )
 
   // generateChapterEmbeddings leaves [] for any entry the API response
