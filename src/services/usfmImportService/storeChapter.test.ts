@@ -103,8 +103,9 @@ describe("storeChapter", () => {
     ])
     for (const n of [1, 2, 3, 4]) {
       const hash = fake.hashes.get(`embedding:luk:10:${n}`)
-      assert.equal(hash?.key, `verse:luk:10:${n}`)
-      assert.equal((hash?.embedding as Buffer).length, 1024 * 4)
+      assert.ok(hash, `vector stored for verse ${n}`)
+      assert.equal(hash.key, `verse:luk:10:${n}`)
+      assert.equal((hash.embedding as Buffer).length, 1024 * 4)
     }
   })
 
