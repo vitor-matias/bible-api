@@ -28,7 +28,7 @@ require("dotenv").config()
 // Chapters whose embeddings failed do not hold it back; see loadFilesIntoMemory.
 // The suffix is part of the storage format: bump it when the layout changes so
 // existing databases reimport instead of being read with the wrong assumptions.
-const IMPORT_COMPLETE_KEY = "importComplete:v4"
+const IMPORT_COMPLETE_KEY = "importComplete:v5"
 
 // The import embeds each chapter in its own request, in the background, with
 // at most 16 in flight. The API's per-minute request limit is enforced in the

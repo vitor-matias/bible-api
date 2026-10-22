@@ -12,6 +12,33 @@ type EmbeddingDocument = {
 // KNN search is capped at this many results; results beyond this offset are unavailable.
 export const KNN_MAX_RESULTS = 100
 
+// Contextual embeddings give neighbouring verses similar vectors, so one
+// passage could fill a page and push out the same saying elsewhere (a parallel
+// Gospel, a quoted Law). At most this many verses per chapter are kept, in
+// rank order.
+export const MAX_VERSES_PER_CHAPTER = 2
+
+// Neighbours fetched before the chapter cap thins them. Narrative queries
+// cluster in a few chapters (300 candidates left as few as 29 results), while
+// 1,000 kept the full KNN_MAX_RESULTS window for every query tested and costs
+// a few milliseconds more than 100.
+const KNN_CANDIDATES = KNN_MAX_RESULTS * 10
+
+// Keeps verse keys in order, dropping any beyond `perChapter` from a chapter
+// already represented. A verse key is "verse:<book>:<chapter>:<verse>".
+export const capPerChapter = (
+  verseKeys: string[],
+  perChapter = MAX_VERSES_PER_CHAPTER,
+): string[] => {
+  const kept = new Map<string, number>()
+  return verseKeys.filter((key) => {
+    const chapter = key.slice(0, key.lastIndexOf(":"))
+    const count = (kept.get(chapter) ?? 0) + 1
+    kept.set(chapter, count)
+    return count <= perChapter
+  })
+}
+
 export const semanticSearchVerses = async (
   client: ReturnType<typeof createClient>,
   search: string,
@@ -40,14 +67,14 @@ export const semanticSearchVerses = async (
   // `totalPages`) shrink to that page and hide the rest of the results.
   const results = (await client.ft.search(
     EMBEDDING_INDEX,
-    `*=>[KNN ${KNN_MAX_RESULTS} @embedding $vec AS score]`,
+    `*=>[KNN ${KNN_CANDIDATES} @embedding $vec AS score]`,
     {
       PARAMS: {
         vec: embeddingBuffer,
       },
       LIMIT: {
         from: 0,
-        size: KNN_MAX_RESULTS,
+        size: KNN_CANDIDATES,
       },
       SORTBY: {
         BY: "score",
@@ -67,13 +94,17 @@ export const semanticSearchVerses = async (
     }
   }
 
-  const paginatedDocs = results.documents.slice(offset, offset + pageSize)
-  const totalResults = Math.min(results.total, KNN_MAX_RESULTS)
+  // The cap is applied to the whole ranked window before paging, so pages
+  // never overlap and `total` counts what can actually be paged through.
+  const rankedKeys = capPerChapter(
+    results.documents.map(
+      (doc) => (doc.value as unknown as EmbeddingDocument).key,
+    ),
+  ).slice(0, KNN_MAX_RESULTS)
+  const totalResults = rankedKeys.length
   const totalPages = Math.ceil(totalResults / pageSize)
 
-  const verseKeys = paginatedDocs.map(
-    (doc) => (doc.value as unknown as EmbeddingDocument).key,
-  )
+  const verseKeys = rankedKeys.slice(offset, offset + pageSize)
 
   // One round trip for the whole page.
   const verses = (await jsonMGet<Verse>(client, verseKeys)).filter(
