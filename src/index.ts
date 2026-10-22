@@ -5,11 +5,11 @@ import express from "express"
 import helmet from "helmet"
 import { createClient } from "redis"
 import setEndpoints from "./rest"
-import { generateEmbedding } from "./services/openai/embeddings"
 import { readBook } from "./services/usfmImportService/readBook"
 import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
 import { storeBook } from "./services/usfmImportService/storeBook"
 import { EMBEDDING_FAILURES_KEY } from "./services/usfmImportService/storeChapter"
+import { generateQueryEmbedding } from "./services/voyage/embeddings"
 import { verifyEmbeddingIndex } from "./util/embeddingIndex"
 import { flushDatabase } from "./util/flushDatabase"
 import {
@@ -27,7 +27,7 @@ require("dotenv").config()
 // Chapters whose embeddings failed do not hold it back; see loadFilesIntoMemory.
 // The suffix is part of the storage format: bump it when the layout changes so
 // existing databases reimport instead of being read with the wrong assumptions.
-const IMPORT_COMPLETE_KEY = "importComplete:v3"
+const IMPORT_COMPLETE_KEY = "importComplete:v4"
 
 const app = express()
 app.disable("x-powered-by")
@@ -126,7 +126,7 @@ const startImport = async (): Promise<void> => {
   // primary data, but mark the process degraded and refuse semantic search.
   setImportState("degraded")
 
-  // Re-embedding runs after the data is already being served: it is one OpenAI
+  // Re-embedding runs after the data is already being served: it is one Voyage
   // call per failed chapter, and an outage during the import can leave
   // hundreds of them — minutes of 503s if the start waited for it.
   if (outcome === "embeddingsPending") {
@@ -229,7 +229,7 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // removes, so find out first, while nothing has been touched, that they
     // can be generated. A missing, rotated or out-of-quota key throws here.
     try {
-      await generateEmbedding("ping")
+      await generateQueryEmbedding("ping")
     } catch (error) {
       if (!alreadyLoaded) {
         throw error
@@ -238,7 +238,7 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
       // nothing; carry on as a start without --reimport would and keep
       // serving it.
       console.error(
-        "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check OPENAI_API_KEY and restart with --reimport to retry.",
+        "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check VOYAGE_API_KEY and restart with --reimport to retry.",
         error,
       )
       return await existingDataOutcome(client)

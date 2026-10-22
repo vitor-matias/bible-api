@@ -2,7 +2,7 @@ import type { createClient, SearchReply } from "redis"
 import { EMBEDDING_INDEX } from "../../util/embeddingIndex"
 import { jsonMGet } from "../../util/jsonMGet"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
-import { generateEmbedding } from "../openai/embeddings"
+import { generateQueryEmbedding } from "../voyage/embeddings"
 
 // The only field the query returns: the vector itself never leaves the index.
 type EmbeddingDocument = {
@@ -32,7 +32,7 @@ export const semanticSearchVerses = async (
     }
   }
 
-  const queryEmbedding = await generateEmbedding(search)
+  const queryEmbedding = await generateQueryEmbedding(search)
   const embeddingBuffer = toFloat32Buffer(queryEmbedding)
 
   // Always ask for the full window: a KNN query returns at most K documents, so
