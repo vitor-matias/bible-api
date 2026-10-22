@@ -31,7 +31,7 @@ npm start              # compiles, then runs
 |---|---|
 | `DB_URL` | Redis-compatible server, e.g. `redis://localhost:6379` (`rediss://` for TLS) |
 | `PATH_TO_TEXTS` | Folder of USFM files. Needed to import; not needed to serve |
-| `VOYAGE_API_KEY` | Embeddings (Voyage `voyage-4-large`): every verse at import, every query at search time |
+| `VOYAGE_API_KEY` | Embeddings (Voyage `voyage-context-4`): every verse at import, every query at search time |
 | `VOYAGE_BASE_URL` | Optional. The default serves keys created in MongoDB Atlas; a key from the Voyage AI platform, or one scoped to a geography, needs its own endpoint. Must be `https://` (plain `http://` only for localhost, for the stub) |
 | `EMBEDDING_DIMENSIONS` | Vector size: `256`, `512` (default), `1024` or `2048`, the sizes the model offers. Changing it needs a reimport |
 | `PORT` | Default `3000` |
@@ -55,12 +55,13 @@ again.
 
 The import first checks that the folder holds `.usfm` files and that Voyage
 answers, so a wrong folder or a bad key fails before anything is deleted. Then it
-flushes the database and embeds every verse, one Voyage request per chapter, up
-to 16 at a time and under Voyage's per-minute request limit. A chapter whose
-embedding call fails does not hold up the rest: it is recorded instead, served as
-`degraded`, and retried — once right away, then again on every later start —
-until it succeeds, rather than flushing and reimporting the whole corpus over a
-handful of chapters.
+flushes the database and embeds every verse: one Voyage request per chapter, up to
+16 at a time and under Voyage's per-minute request limit. A chapter is embedded as
+one document, headed by its book, chapter and section titles, so each verse's vector
+reflects what surrounds it. A chapter whose embedding call fails does not hold up
+the rest: it is recorded instead, served as `degraded`, and retried — once right
+away, then again on every later start — until it succeeds, rather than flushing and
+reimporting the whole corpus over a handful of chapters.
 
 Vectors from one embedding model mean nothing to another, so a database imported
 with a different model (or an earlier version of this API) is detected by its
@@ -138,6 +139,8 @@ text and one vector per verse), so the database needs no search features.
   cross-references are searchable but never joined to the verse text; footnotes
   are not searched. Results are in verse order.
 - **Semantic** embeds the query with Voyage and ranks verses by cosine similarity.
+  Neighbouring verses of a chapter score alike, so at most two verses per chapter are
+  returned, which keeps one passage from crowding out the same saying elsewhere.
 
 ## Sizing
 

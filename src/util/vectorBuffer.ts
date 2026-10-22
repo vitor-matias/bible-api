@@ -1,5 +1,5 @@
 // The model services/voyage/embeddings.ts calls, and the vector sizes it can
-// produce: voyage-4-large defaults to 1024 and also offers 256, 512 and 2048.
+// produce: voyage-context-4 defaults to 1024 and also offers 256, 512 and 2048.
 // Any other size is rejected by the API, which would fail every chapter of an
 // import one by one, so it is rejected here instead, once, at startup. Shorter
 // vectors shrink what the database and the API's memory hold in proportion: 512
@@ -9,7 +9,7 @@
 // Changing the model or the size makes every stored vector unusable (another
 // model's vectors share no space with this one's, and the sizes must match the
 // query's), so bump IMPORT_COMPLETE_KEY in importMarker.ts along with it.
-export const EMBEDDING_MODEL = "voyage-4-large"
+export const EMBEDDING_MODEL = "voyage-context-4"
 const SUPPORTED_EMBEDDING_DIMENSIONS: readonly number[] = [256, 512, 1024, 2048]
 const DEFAULT_EMBEDDING_DIMENSIONS = 512
 

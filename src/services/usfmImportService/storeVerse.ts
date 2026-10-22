@@ -176,18 +176,17 @@ export const storeVerse = async (
 
 /**
  * Extracts the plain text content from a verse for embedding generation.
- * Includes text, quote, paragraph, and section types; excludes footnotes and references.
+ * Includes text, quote, and paragraph types; excludes section headings (sent to
+ * the model as context chunks of their own, see chapterDocument), footnotes,
+ * references, and the zero-width spaces that mark empty quote tags.
  */
 export const extractVerseText = (verseData: Verse): string => {
   return verseData.text
     .filter(
-      (t) =>
-        t.type === "text" ||
-        t.type === "quote" ||
-        t.type === "paragraph" ||
-        t.type === "section",
+      (t) => t.type === "text" || t.type === "quote" || t.type === "paragraph",
     )
-    .map((t) => t.text.trim())
+    .map((t) => t.text.replace(/\u200B/g, "").trim())
+    .filter(Boolean)
     .join(" ")
 }
 

@@ -10,7 +10,9 @@ type Client = ReturnType<typeof createClient>
 // v4: vectors from voyage-4-large (document/query input types). Another model's
 // vectors are not comparable with these, even at the same size, so a database
 // holding them has to be reimported, not read.
-export const IMPORT_COMPLETE_KEY = "importComplete:v4"
+// v5: vectors from voyage-context-4, each verse embedded with its chapter's
+// book, chapter and section headings around it (see chapterDocument.ts).
+export const IMPORT_COMPLETE_KEY = "importComplete:v5"
 
 // True when an import finished AND the database really holds verses. The marker
 // alone is not enough: an import of a folder with no texts used to write it too,

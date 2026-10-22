@@ -5,6 +5,7 @@
   "scripts": {
     "build": "tsc",
     "test": "tsc && node --test \"dist/**/*.test.js\"",
+    "test:coverage": "tsc --sourceMap && mkdir -p coverage && node --test --enable-source-maps --experimental-test-coverage --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \"dist/**/*.test.js\"",
     "start": "tsc && node dist/index.js",
     "import": "tsc && node dist/import.js",
     "biome": "npx @biomejs/biome check --write ./src"

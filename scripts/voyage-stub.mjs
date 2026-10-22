@@ -1,4 +1,4 @@
-// A local stand-in for Voyage's POST /v1/embeddings, so the whole API (import,
+// A local stand-in for Voyage's POST /v1/contextualizedembeddings, so the whole API (import,
 // startup, semantic search) can run with no API key and no cost.
 //
 //   node scripts/voyage-stub.mjs
@@ -41,7 +41,7 @@ const randomUnitVector = (dimensions) => {
 }
 
 createServer((req, res) => {
-  if (req.method !== "POST" || !req.url.endsWith("/embeddings")) {
+  if (req.method !== "POST" || !req.url.endsWith("/contextualizedembeddings")) {
     res.writeHead(404).end()
     return
   }
@@ -50,13 +50,19 @@ createServer((req, res) => {
   req.on("data", (chunk) => chunks.push(chunk))
   req.on("end", () => {
     const body = JSON.parse(Buffer.concat(chunks).toString() || "{}")
-    const inputs = Array.isArray(body.input) ? body.input : [body.input]
+    // One document per entry, each a list of chunks: a chapter's headings and
+    // verses, or a search query as a document of one chunk.
+    const documents = Array.isArray(body.inputs) ? body.inputs : []
     const dimensions = Number(body.output_dimension) || DEFAULT_DIMENSIONS
 
-    const data = inputs.map((_, index) => ({
-      object: "embedding",
+    const data = documents.map((document, index) => ({
+      object: "list",
       index,
-      embedding: Array.from(randomUnitVector(dimensions)),
+      data: document.map((_, chunkIndex) => ({
+        object: "embedding",
+        index: chunkIndex,
+        embedding: Array.from(randomUnitVector(dimensions)),
+      })),
     }))
 
     res.writeHead(200, { "content-type": "application/json" })
@@ -64,8 +70,8 @@ createServer((req, res) => {
       JSON.stringify({
         object: "list",
         data,
-        model: body.model ?? "voyage-4-large",
-        usage: { total_tokens: inputs.length },
+        model: body.model ?? "voyage-context-4",
+        usage: { total_tokens: documents.flat().length },
       }),
     )
   })

@@ -2,17 +2,46 @@ import type { createClient } from "redis"
 import { mGetJson } from "../../util/jsonStore"
 import { toQueryVector } from "../../util/vectorBuffer"
 import { generateQueryEmbedding } from "../voyage/embeddings"
-import { getVectorIndex, nearest } from "./searchIndex"
+import { getVectorIndex, nearest, type VectorIndex } from "./searchIndex"
 
 // The search returns at most this many results; results beyond this offset are
 // unavailable.
 export const KNN_MAX_RESULTS = 100
 
+// Contextual embeddings give neighbouring verses similar vectors, so one
+// passage could fill a page and push out the same saying elsewhere (a parallel
+// Gospel, a quoted Law). At most this many verses per chapter are kept, in
+// rank order.
+export const MAX_VERSES_PER_CHAPTER = 2
+
+// Neighbours ranked before the chapter cap thins them. Narrative queries
+// cluster in a few chapters (300 candidates left as few as 29 results), while
+// 1,000 kept the full KNN_MAX_RESULTS window for every query tested.
+const KNN_CANDIDATES = KNN_MAX_RESULTS * 10
+
+// Keeps verse keys in order, dropping any beyond `perChapter` from a chapter
+// already represented. A verse key is "verse:<book>:<chapter>:<verse>".
+export const capPerChapter = (
+  verseKeys: string[],
+  perChapter = MAX_VERSES_PER_CHAPTER,
+): string[] => {
+  const kept = new Map<string, number>()
+  return verseKeys.filter((key) => {
+    const chapter = key.slice(0, key.lastIndexOf(":"))
+    const count = (kept.get(chapter) ?? 0) + 1
+    kept.set(chapter, count)
+    return count <= perChapter
+  })
+}
+
+// `index` is what to rank over: the one loaded at startup unless a caller
+// brings its own.
 export const semanticSearchVerses = async (
   client: ReturnType<typeof createClient>,
   search: string,
   page: number,
   pageSize: number,
+  index?: Pick<VectorIndex, "keys" | "matrix" | "dimensions">,
 ): Promise<VersePage> => {
   const offset = (page - 1) * pageSize
 
@@ -32,10 +61,15 @@ export const semanticSearchVerses = async (
 
   // Always rank the full window: sizing it to the requested page would make
   // `total` (and therefore `totalPages`) shrink to that page and hide the rest
-  // of the results.
-  const ranked = nearest(getVectorIndex(), queryVector, KNN_MAX_RESULTS)
+  // of the results. The cap is applied to all of it before paging, so pages
+  // never overlap and `total` counts what can actually be paged through.
+  const ranked = nearest(index ?? getVectorIndex(), queryVector, KNN_CANDIDATES)
+  const rankedKeys = capPerChapter(ranked.map((result) => result.key)).slice(
+    0,
+    KNN_MAX_RESULTS,
+  )
 
-  if (ranked.length === 0) {
+  if (rankedKeys.length === 0) {
     return {
       verses: [],
       total: 0,
@@ -44,10 +78,8 @@ export const semanticSearchVerses = async (
     }
   }
 
-  const totalPages = Math.ceil(ranked.length / pageSize)
-  const pageKeys = ranked
-    .slice(offset, offset + pageSize)
-    .map((result) => result.key)
+  const totalPages = Math.ceil(rankedKeys.length / pageSize)
+  const pageKeys = rankedKeys.slice(offset, offset + pageSize)
 
   const verses: Verse[] = []
   for (const verse of await mGetJson<Verse>(client, pageKeys)) {
@@ -58,7 +90,7 @@ export const semanticSearchVerses = async (
 
   return {
     verses,
-    total: ranked.length,
+    total: rankedKeys.length,
     currentPage: page,
     totalPages,
   }

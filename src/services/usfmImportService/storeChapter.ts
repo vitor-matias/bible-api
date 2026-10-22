@@ -3,7 +3,8 @@ import type { TaskPool } from "../../util/concurrency"
 import { encodeVector } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { embeddingKey } from "../search/embeddingKey"
-import { generateDocumentEmbeddings } from "../voyage/embeddings"
+import { generateChapterEmbeddings } from "../voyage/embeddings"
+import { chapterDocument, saveChapterOutline } from "./chapterDocument"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
 // Chapters whose embeddings failed transiently, as "bookId:chapter" members.
@@ -59,6 +60,14 @@ export const storeChapter = async (
 ): Promise<void> => {
   let verseNumber = 1
   const versesData: VerseForEmbedding[] = []
+  // Every verse as stored, verse 0 included, in order: the chapter's section
+  // outline is read from them.
+  const storedVerses: Verse[] = []
+  const storeInOrder = async (...args: Parameters<typeof storeVerse>) => {
+    const verseData = await storeVerse(...args)
+    storedVerses.push(verseData)
+    return verseData
+  }
 
   // Tracks an empty quote (like \q1) that appears at the end of a verse, so it can
   // be applied to the beginning of the next verse.
@@ -66,6 +75,9 @@ export const storeChapter = async (
 
   const verseEntries = Object.entries(chapter).sort(compareVerseLabels)
 
+  // Sequential on purpose: each verse's number, the empty quote carried into
+  // the next verse and the order the section outline is read in all depend on
+  // storing the verses one at a time, in order.
   for (const [index, [verseLabel, verse]] of verseEntries.entries()) {
     // If the previous verse ended with an empty quote block, apply its tag
     // to the first object of the current verse if it's plain text.
@@ -103,7 +115,7 @@ export const storeChapter = async (
       for (const verseObject of Object.values(verse.verseObjects)) {
         if (verseObject.tag === "va") {
           if (labelForVerse !== "") {
-            const verseData = await storeVerse(
+            const verseData = /* NOSONAR */ await storeInOrder(
               client,
               bookCode,
               bookNumber,
@@ -124,7 +136,7 @@ export const storeChapter = async (
       }
 
       if (labelForVerse !== "") {
-        const verseData = await storeVerse(
+        const verseData = /* NOSONAR */ await storeInOrder(
           client,
           bookCode,
           bookNumber,
@@ -137,7 +149,7 @@ export const storeChapter = async (
         verseNumber++
       }
     } else if (verseLabel !== "front") {
-      const verseData = await storeVerse(
+      const verseData = /* NOSONAR */ await storeInOrder(
         client,
         bookCode,
         bookNumber,
@@ -149,7 +161,7 @@ export const storeChapter = async (
       collectForEmbedding(versesData, verseData, verseNumber)
       verseNumber++
     } else {
-      await storeVerse(
+      /* NOSONAR */ await storeInOrder(
         client,
         bookCode,
         bookNumber,
@@ -161,7 +173,7 @@ export const storeChapter = async (
     }
   }
   if (chapter.front === null) {
-    await storeVerse(
+    await storeInOrder(
       client,
       bookCode,
       bookNumber,
@@ -178,6 +190,9 @@ export const storeChapter = async (
     chapterVerseMaxKey(bookCode, chapterNumber),
     String(Math.max(0, verseNumber - 1)),
   )
+
+  // Before the chapter's embedding is queued: its document reads the outline.
+  await saveChapterOutline(client, bookCode, chapterNumber, storedVerses)
 
   // The chapter's verses are embedded in one batch, in the background: the
   // import goes on storing later chapters instead of waiting on the API. The
@@ -213,11 +228,11 @@ export const embedAndStoreVerses = async (
   client: ReturnType<typeof createClient>,
   versesData: VerseForEmbedding[],
 ): Promise<void> => {
-  const embeddings = await generateDocumentEmbeddings(
-    versesData.map((v) => v.text),
+  const embeddings = await generateChapterEmbeddings(
+    await chapterDocument(client, versesData),
   )
 
-  // generateDocumentEmbeddings leaves [] for any entry the API response
+  // generateChapterEmbeddings leaves [] for any entry the API response
   // lacked. Writing the rest would count the chapter as embedded while some
   // verses have no vector, so treat a partial response as a failure before
   // writing anything.
