@@ -4,7 +4,7 @@ import { EMBEDDING_KEY_PREFIX } from "../../util/embeddingIndex"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
 import { verseKey } from "../verse/getVerse"
-import { generateDocumentEmbeddings } from "../voyage/embeddings"
+import { generateChapterEmbeddings } from "../voyage/embeddings"
 import { extractVerseText, storeVerse } from "./storeVerse"
 
 // Chapters whose embeddings failed transiently, as "bookId:chapter" members.
@@ -213,11 +213,11 @@ export const embedAndStoreVerses = async (
   client: ReturnType<typeof createClient>,
   versesData: VerseForEmbedding[],
 ): Promise<void> => {
-  const embeddings = await generateDocumentEmbeddings(
+  const embeddings = await generateChapterEmbeddings(
     versesData.map((v) => v.text),
   )
 
-  // generateDocumentEmbeddings leaves [] for any entry the API response
+  // generateChapterEmbeddings leaves [] for any entry the API response
   // lacked. Writing the rest would count the chapter as embedded while some
   // verses have no vector, so treat a partial response as a failure before
   // writing anything.
