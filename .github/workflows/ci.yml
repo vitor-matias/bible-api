@@ -25,7 +25,8 @@ jobs:
           node-version: 24
           cache: npm
 
-      - run: npm ci
+      # No dependency needs an install script, so none are allowed to run.
+      - run: npm ci --ignore-scripts
 
       - run: npm run test:coverage
 
