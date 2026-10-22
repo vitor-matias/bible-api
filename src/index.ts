@@ -285,17 +285,18 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
       EMBEDDING_CONCURRENCY,
       EMBEDDING_MIN_INTERVAL_MS,
     )
+    const storeFile = async (file: string) => {
+      console.log(file)
+      const bibleData = await readBook(path.join(filePath, file))
+      await storeBook(client, bibleData, file, embeddings)
+    }
     try {
       const chunkSize = 1
       for (let i = 0; i < files.length; i += chunkSize) {
         const chunk = files.slice(i, i + chunkSize)
-        await Promise.all(
-          chunk.map(async (file) => {
-            console.log(file)
-            const bibleData = await readBook(path.join(filePath, file))
-            await storeBook(client, bibleData, file, embeddings)
-          }),
-        )
+        // Sequential on purpose: each book's position in the "books" list
+        // numbers its verses, so books must be stored in file order.
+        await Promise.all(chunk.map(storeFile)) // NOSONAR
       }
     } catch (error) {
       // Let in-flight embedding calls settle before the client is closed

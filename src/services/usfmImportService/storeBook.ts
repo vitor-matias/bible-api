@@ -48,15 +48,12 @@ export const storeBook = async (
 
   await client.json.set(`book:${bookId}`, "$", book)
 
-  for (const [number, chapter] of Object.entries(usfmBook.chapters)) {
-    await storeChapter(
-      client,
-      bookId,
-      bookCount,
-      Number.parseInt(number, 10),
-      chapter,
-      embeddings,
-    )
+  for (const [label, chapter] of Object.entries(usfmBook.chapters)) {
+    const number = Number.parseInt(label, 10)
+    // Sequential on purpose: a chapter's heading can carry over to the next
+    // chapter's title, so chapters are stored in order. Their embedding calls
+    // already run concurrently in the pool.
+    await storeChapter(client, bookId, bookCount, number, chapter, embeddings) // NOSONAR
   }
 }
 

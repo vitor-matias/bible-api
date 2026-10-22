@@ -83,9 +83,11 @@ export const createTaskPool = (limit: number, minIntervalMs = 0): TaskPool => {
     try {
       while (!failure && queue.length > 0) {
         const task = queue.shift() as () => Promise<void>
-        await waitForStartSlot()
+        // Sequential on purpose: each worker runs one task at a time; the pool
+        // gets its concurrency from running `limit` workers side by side.
+        await waitForStartSlot() // NOSONAR
         try {
-          await task()
+          await task() // NOSONAR
         } catch (error) {
           failure ??= { error }
         }
@@ -105,8 +107,10 @@ export const createTaskPool = (limit: number, minIntervalMs = 0): TaskPool => {
       }
     },
     drain: async () => {
+      // Looped on purpose: a task can submit more work, starting a worker
+      // that the earlier Promise.all did not include.
       while (workers.size > 0) {
-        await Promise.all(workers)
+        await Promise.all(workers) // NOSONAR
       }
       if (failure) throw failure.error
     },
