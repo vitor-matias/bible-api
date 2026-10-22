@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import type { TaskPool } from "../../util/concurrency"
 import { getBookHeader } from "../book/getBookHeader"
 import { getBookId } from "../book/getBookId"
 import { extractBookIntro } from "./bookIntroUtils"
@@ -10,11 +11,14 @@ import {
 } from "./storeIntro"
 
 // The caller owns the connection: opening one client per source file cost 90
-// connections and handshakes per import, several of them for two commands.
+// connections and handshakes per import, several of them for two commands. It
+// also owns `embeddings`, which runs each chapter's embedding call in the
+// background and must be drained before the import counts as finished.
 export const storeBook = async (
   client: ReturnType<typeof createClient>,
   usfmBook: USFMBook,
   sourceFile: string,
+  embeddings: TaskPool,
 ): Promise<void> => {
   const bookId = getBookId(usfmBook)?.toLowerCase()
 
@@ -51,6 +55,7 @@ export const storeBook = async (
       bookCount,
       Number.parseInt(number, 10),
       chapter,
+      embeddings,
     )
   }
 }

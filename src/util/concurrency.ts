@@ -40,3 +40,75 @@ export const mapWithConcurrency = async <T, R>(
 
   return results
 }
+
+export type TaskPool = {
+  submit: (task: () => Promise<void>) => void
+  drain: () => Promise<void>
+}
+
+// Runs submitted tasks in the background with at most `limit` in flight and
+// starts spaced at least `minIntervalMs` apart, so a request rate limit holds
+// however fast the calls return. Unlike mapWithConcurrency, the caller keeps
+// submitting while earlier tasks run. drain() resolves once every task has
+// settled, or rejects with the first task error; after an error, queued tasks
+// are dropped instead of started.
+export const createTaskPool = (limit: number, minIntervalMs = 0): TaskPool => {
+  if (!Number.isSafeInteger(limit) || limit < 1) {
+    throw new RangeError(
+      `Concurrency limit must be a positive integer: ${limit}`,
+    )
+  }
+
+  const queue: (() => Promise<void>)[] = []
+  const workers = new Set<Promise<void>>()
+  // Counted apart from `workers`: a worker leaves that set a few microtasks
+  // after its loop ends, and a task submitted in between would otherwise wait
+  // in the queue with no worker left to start it.
+  let active = 0
+  let nextStart = 0
+  let failure: { error: unknown } | null = null
+
+  const waitForStartSlot = async () => {
+    const now = Date.now()
+    const start = Math.max(now, nextStart)
+    nextStart = start + minIntervalMs
+    if (start > now) {
+      await new Promise((resolve) => setTimeout(resolve, start - now))
+    }
+  }
+
+  // Never rejects: an error is kept for drain(), so a pool nobody drains yet
+  // cannot raise an unhandled rejection.
+  const work = async () => {
+    try {
+      while (!failure && queue.length > 0) {
+        const task = queue.shift() as () => Promise<void>
+        await waitForStartSlot()
+        try {
+          await task()
+        } catch (error) {
+          failure ??= { error }
+        }
+      }
+    } finally {
+      active--
+    }
+  }
+
+  return {
+    submit: (task) => {
+      queue.push(task)
+      if (active < limit) {
+        active++
+        const worker = work().finally(() => workers.delete(worker))
+        workers.add(worker)
+      }
+    },
+    drain: async () => {
+      while (workers.size > 0) {
+        await Promise.all(workers)
+      }
+      if (failure) throw failure.error
+    },
+  }
+}

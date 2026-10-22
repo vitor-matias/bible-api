@@ -10,6 +10,7 @@ import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddi
 import { storeBook } from "./services/usfmImportService/storeBook"
 import { EMBEDDING_FAILURES_KEY } from "./services/usfmImportService/storeChapter"
 import { generateQueryEmbedding } from "./services/voyage/embeddings"
+import { createTaskPool } from "./util/concurrency"
 import { verifyEmbeddingIndex } from "./util/embeddingIndex"
 import { flushDatabase } from "./util/flushDatabase"
 import {
@@ -28,6 +29,12 @@ require("dotenv").config()
 // The suffix is part of the storage format: bump it when the layout changes so
 // existing databases reimport instead of being read with the wrong assumptions.
 const IMPORT_COMPLETE_KEY = "importComplete:v4"
+
+// The import embeds each chapter in its own request, in the background. The
+// embedding API allows 2,000 requests a minute: starts are spaced to stay
+// under 1,800 of them, with at most 16 in flight.
+const EMBEDDING_CONCURRENCY = 16
+const EMBEDDING_MIN_INTERVAL_MS = 60_000 / 1_800
 
 const app = express()
 app.disable("x-powered-by")
@@ -272,17 +279,33 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // chapters whose embeddings failed.
     await flushDatabase()
 
-    const chunkSize = 1
-    for (let i = 0; i < files.length; i += chunkSize) {
-      const chunk = files.slice(i, i + chunkSize)
-      await Promise.all(
-        chunk.map(async (file) => {
-          console.log(file)
-          const bibleData = await readBook(path.join(filePath, file))
-          await storeBook(client, bibleData, file)
-        }),
-      )
+    // Books are stored one at a time, in order (their position numbers the
+    // verses), while chapter embedding calls run behind them in the pool.
+    const embeddings = createTaskPool(
+      EMBEDDING_CONCURRENCY,
+      EMBEDDING_MIN_INTERVAL_MS,
+    )
+    try {
+      const chunkSize = 1
+      for (let i = 0; i < files.length; i += chunkSize) {
+        const chunk = files.slice(i, i + chunkSize)
+        await Promise.all(
+          chunk.map(async (file) => {
+            console.log(file)
+            const bibleData = await readBook(path.join(filePath, file))
+            await storeBook(client, bibleData, file, embeddings)
+          }),
+        )
+      }
+    } catch (error) {
+      // Let in-flight embedding calls settle before the client is closed
+      // under them; the storage error is the one worth reporting.
+      await embeddings.drain().catch(() => {})
+      throw error
     }
+    // Every chapter's embedding must have landed (or been recorded as failed)
+    // before the failure set is read below.
+    await embeddings.drain()
 
     // A chapter whose embedding call failed is recorded in Redis rather than
     // blocking the marker: the primary data is complete, and those chapters

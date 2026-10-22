@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import type { TaskPool } from "../../util/concurrency"
 import { EMBEDDING_KEY_PREFIX } from "../../util/embeddingIndex"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
@@ -55,6 +56,7 @@ export const storeChapter = async (
   bookNumber: number,
   chapterNumber: number,
   chapter: USFMChapter,
+  embeddings: TaskPool,
 ): Promise<void> => {
   let verseNumber = 1
   const versesData: VerseForEmbedding[] = []
@@ -178,23 +180,30 @@ export const storeChapter = async (
     String(Math.max(0, verseNumber - 1)),
   )
 
-  // Generate embeddings in batch for all verses in the chapter
+  // The chapter's verses are embedded in one batch, in the background: the
+  // import goes on storing later chapters instead of waiting on the API. The
+  // caller drains the pool before it reads the failure set.
   if (versesData.length > 0) {
-    console.log(
-      `Generating embeddings for chapter ${chapterNumber} with ${versesData.length} verses...`,
-    )
-    try {
-      await embedAndStoreVerses(client, versesData)
-    } catch (error) {
-      // Never stop the import over embeddings: the primary data matters more.
-      // The chapter is recorded and re-embedded on a later start, and semantic
-      // search stays disabled until then.
-      console.error(
-        `Failed to generate embeddings for chapter ${chapterNumber}:`,
-        error,
+    embeddings.submit(async () => {
+      console.log(
+        `Generating embeddings for ${bookCode} ${chapterNumber} with ${versesData.length} verses...`,
       )
-      await client.sAdd(EMBEDDING_FAILURES_KEY, `${bookCode}:${chapterNumber}`)
-    }
+      try {
+        await embedAndStoreVerses(client, versesData)
+      } catch (error) {
+        // Never stop the import over embeddings: the primary data matters
+        // more. The chapter is recorded and re-embedded on a later start, and
+        // semantic search stays disabled until then.
+        console.error(
+          `Failed to generate embeddings for ${bookCode} ${chapterNumber}:`,
+          error,
+        )
+        await client.sAdd(
+          EMBEDDING_FAILURES_KEY,
+          `${bookCode}:${chapterNumber}`,
+        )
+      }
+    })
   }
 }
 
