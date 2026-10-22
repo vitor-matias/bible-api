@@ -66,39 +66,44 @@ const getClient = (): VoyageAIClient => {
 // Verses are embedded as documents and searches as queries: Voyage prepends a
 // different retrieval prompt to each, and both sides need it for the best
 // ranking.
-export const generateDocumentEmbeddings = async (
-  texts: string[],
+//
+// The model is contextual: `verses` must be one chapter's verses in order.
+// They are sent as the chunks of a single document, so each verse's vector
+// also reflects the verses around it (a verse that only says "He rebuked the
+// wind" still lands near a search for Jesus calming the storm).
+export const generateChapterEmbeddings = async (
+  verses: string[],
 ): Promise<number[][]> => {
-  if (!texts || texts.length === 0) {
+  if (!verses || verses.length === 0) {
     return []
   }
 
-  const validTexts: { index: number; text: string }[] = []
-  texts.forEach((text, index) => {
+  const validVerses: { index: number; text: string }[] = []
+  verses.forEach((text, index) => {
     if (text && text.trim().length > 0) {
-      validTexts.push({ index, text: text.trim() })
+      validVerses.push({ index, text: text.trim() })
     }
   })
 
-  if (validTexts.length === 0) {
-    return texts.map(() => [])
+  if (validVerses.length === 0) {
+    return verses.map(() => [])
   }
 
   try {
-    const response = await getClient().embed({
+    const { rawResponse } = await getClient().contextualizedEmbed({
       model: EMBEDDING_MODEL,
       outputDimension: EMBEDDING_DIMENSIONS,
       inputType: "document",
-      input: validTexts.map((v) => v.text),
+      inputs: [validVerses.map((v) => v.text)],
     })
 
-    // Map by the index the API reports rather than by array position, so a
-    // reordered or unexpectedly sized response can't pair verses with the
-    // wrong vector.
-    const result: number[][] = texts.map(() => [])
-    for (const item of response.data ?? []) {
+    // Map by the chunk index the API reports rather than by array position
+    // (which is all the SDK's own result uses), so a reordered or unexpectedly
+    // sized response can't pair verses with the wrong vector.
+    const result: number[][] = verses.map(() => [])
+    for (const item of rawResponse.data?.[0]?.data ?? []) {
       const source =
-        item.index === undefined ? undefined : validTexts[item.index]
+        item.index === undefined ? undefined : validVerses[item.index]
       if (source && item.embedding) {
         result[source.index] = item.embedding
       }
@@ -121,14 +126,15 @@ export const generateQueryEmbedding = async (
   }
 
   try {
-    const response = await getClient().embed({
+    // A query is a document of one chunk: it has no surrounding context.
+    const { rawResponse } = await getClient().contextualizedEmbed({
       model: EMBEDDING_MODEL,
       outputDimension: EMBEDDING_DIMENSIONS,
       inputType: "query",
-      input: text,
+      inputs: [[text]],
     })
 
-    const embedding = response.data?.[0]?.embedding
+    const embedding = rawResponse.data?.[0]?.data?.[0]?.embedding
     if (!embedding) {
       throw new Error("Embedding response contained no vector")
     }
