@@ -11,7 +11,10 @@ export const listUsfmFiles = (textsPath: string): string[] => {
   const files = fs
     .readdirSync(textsPath)
     .filter((file) => file.endsWith(".usfm"))
-    .sort()
+    // By UTF-16 code unit, as a bare sort() would. Not localeCompare, which
+    // could order names differently on machines with different locale data,
+    // and the order numbers the verses.
+    .sort((a, b) => Number(a > b) - Number(a < b))
 
   if (files.length === 0) {
     throw new Error(`No .usfm files found in ${textsPath}`)

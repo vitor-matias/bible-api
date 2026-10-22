@@ -36,6 +36,20 @@ describe("listUsfmFiles", () => {
     ])
   })
 
+  it("orders names by code unit, not by locale", () => {
+    // A locale-aware compare puts "é" between "e" and "f"; by code unit it
+    // follows "z". The order numbers the verses, so it must not depend on the
+    // machine's locale data.
+    const folder = folderWith("z.usfm", "é.usfm", "a.usfm", "B.usfm")
+
+    assert.deepEqual(listUsfmFiles(folder), [
+      "B.usfm",
+      "a.usfm",
+      "z.usfm",
+      "é.usfm",
+    ])
+  })
+
   it("refuses an empty folder instead of importing nothing", () => {
     assert.throws(() => listUsfmFiles(folderWith()), /No \.usfm files found/)
   })
