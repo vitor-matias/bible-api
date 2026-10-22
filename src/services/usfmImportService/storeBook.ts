@@ -1,5 +1,6 @@
 import type { createClient } from "redis"
 import type { TaskPool } from "../../util/concurrency"
+import { setJson } from "../../util/jsonStore"
 import { getBookHeader } from "../book/getBookHeader"
 import { getBookId } from "../book/getBookId"
 import { extractBookIntro } from "./bookIntroUtils"
@@ -46,7 +47,7 @@ export const storeBook = async (
     ...(introduction && { introduction }),
   }
 
-  await client.json.set(`book:${bookId}`, "$", book)
+  await setJson(client, `book:${bookId}`, book)
 
   for (const [label, chapter] of Object.entries(usfmBook.chapters)) {
     const number = Number.parseInt(label, 10)

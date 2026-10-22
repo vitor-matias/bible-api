@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { setJson } from "../../util/jsonStore"
 import { normalizeText } from "../../util/normalizeText"
 import { getVerse, verseKey } from "../verse/getVerse"
 
@@ -169,11 +170,7 @@ export const storeVerse = async (
     }
   }
 
-  await client.json.set(
-    verseKey(bookId, chapterNumber, verseNumber),
-    "$",
-    verseData,
-  )
+  await setJson(client, verseKey(bookId, chapterNumber, verseNumber), verseData)
   return verseData
 }
 

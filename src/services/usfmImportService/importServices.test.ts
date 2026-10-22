@@ -9,6 +9,7 @@ import {
   startVoyageStub,
 } from "../../testing/voyageStub"
 import type { TaskPool } from "../../util/concurrency"
+import { setJson } from "../../util/jsonStore"
 import { verseKey } from "../verse/getVerse"
 import { retryFailedEmbeddings } from "./retryEmbeddings"
 import { storeBook } from "./storeBook"
@@ -68,7 +69,7 @@ describe("storeIntro", () => {
     await storeIntro(fake.client, "geral", "Geral 2", [])
 
     assert.deepEqual(fake.lists.get(INTRO_LIST_KEY), ["geral", "geral-2"])
-    assert.equal((fake.json.get("intro:geral-2") as BookIntro).name, "Geral 2")
+    assert.equal(fake.document<BookIntro>("intro:geral-2")?.name, "Geral 2")
   })
 
   it("gives up after too many collisions", async () => {
@@ -97,7 +98,7 @@ describe("storeBook", () => {
     await storeBook(fake.client, book, "01_Genesis.usfm", idlePool)
 
     assert.deepEqual(fake.lists.get("books"), ["gen"])
-    assert.deepEqual(fake.json.get("book:gen"), {
+    assert.deepEqual(fake.document("book:gen"), {
       id: "gen",
       name: "Génesis",
       shortName: "Gn",
@@ -105,7 +106,7 @@ describe("storeBook", () => {
       chapterCount: 1,
       introduction: [{ type: "introParagraph", text: "Introdução." }],
     })
-    assert.ok(fake.json.has(verseKey("gen", 1, 1)))
+    assert.ok(fake.strings.has(verseKey("gen", 1, 1)))
   })
 
   it("stores front matter as an introduction, outside the book list", async () => {
@@ -140,7 +141,7 @@ ${intro}
     assert.equal(fake.lists.get("books"), undefined)
     assert.deepEqual(fake.lists.get(INTRO_LIST_KEY), ["geral"])
     assert.equal(
-      (fake.json.get("intro:geral") as BookIntro).name,
+      fake.document<BookIntro>("intro:geral")?.name,
       "Introdução geral",
     )
   })
@@ -205,7 +206,7 @@ describe("retryFailedEmbeddings", () => {
 
     assert.equal(await retryFailedEmbeddings(fake.client), 0)
     for (const n of [1, 2, 3]) {
-      assert.ok(fake.hashes.has(`embedding:gen:1:${n}`), `verse ${n}`)
+      assert.ok(fake.strings.has(`embedding:gen:1:${n}`), `verse ${n}`)
     }
   })
 
@@ -223,7 +224,7 @@ describe("retryFailedEmbeddings", () => {
     }
     for (let n = 4; n <= 6; n++) {
       await fake.client.set(`chapterVerseMax:gen:${n}`, "1")
-      await fake.client.json.set(verseKey("gen", n, 1), "$", {
+      await setJson(fake.client, verseKey("gen", n, 1), {
         bookId: "gen",
         chapterNumber: n,
         number: 1,

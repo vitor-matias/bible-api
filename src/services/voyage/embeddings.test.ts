@@ -5,7 +5,11 @@ import {
   reversedVectors,
   startVoyageStub,
 } from "../../testing/voyageStub"
+import { getEmbeddingDimensions } from "../../util/vectorBuffer"
 import { generateChapterEmbeddings, generateQueryEmbedding } from "./embeddings"
+
+// The size is configurable (EMBEDDING_DIMENSIONS), so the tests follow it.
+const DIMENSIONS = getEmbeddingDimensions()
 
 let stub: Awaited<ReturnType<typeof startVoyageStub>>
 
@@ -58,7 +62,7 @@ describe("generateChapterEmbeddings", () => {
     assert.equal(stub.requests[0].url, "/v1/contextualizedembeddings")
     assert.deepEqual(stub.requests[0].body, {
       model: "voyage-context-4",
-      output_dimension: 1024,
+      output_dimension: DIMENSIONS,
       input_type: "document",
       inputs: [
         [
@@ -72,7 +76,7 @@ describe("generateChapterEmbeddings", () => {
     // One entry per verse chunk: context chunks get none, and the blank verse
     // keeps its slot without being sent.
     assert.equal(vectors.length, 3)
-    assert.equal(vectors[0].length, 1024)
+    assert.equal(vectors[0].length, DIMENSIONS)
     assert.equal(vectors[0][0], "Respondeste bem".length)
     assert.deepEqual(vectors[1], [])
     assert.equal(vectors[2][0], "E quem é o meu próximo?".length)
@@ -99,7 +103,7 @@ describe("generateChapterEmbeddings", () => {
       { text: "um", embed: true },
       { text: "dois", embed: true },
     ])
-    assert.equal(vectors[0].length, 1024)
+    assert.equal(vectors[0].length, DIMENSIONS)
     assert.deepEqual(vectors[1], [])
   })
 
@@ -134,10 +138,10 @@ describe("generateQueryEmbedding", () => {
     stub.requests.length = 0
     stub.respondWith(reversedVectors)
     const vector = await generateQueryEmbedding("Jesus acalma a tempestade")
-    assert.equal(vector.length, 1024)
+    assert.equal(vector.length, DIMENSIONS)
     assert.deepEqual(stub.requests[0].body, {
       model: "voyage-context-4",
-      output_dimension: 1024,
+      output_dimension: DIMENSIONS,
       input_type: "query",
       inputs: [["Jesus acalma a tempestade"]],
     })

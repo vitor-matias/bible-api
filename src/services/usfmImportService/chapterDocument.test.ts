@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { createFakeRedis } from "../../testing/fakeRedis"
+import { setJson } from "../../util/jsonStore"
 import {
   chapterDocument,
   chapterOutlineKey,
@@ -50,9 +51,9 @@ const outlineOf = (
   bookId: string,
   chapter: number,
 ) =>
-  fake.json.get(chapterOutlineKey(bookId, chapter)) as
-    | { start: string[]; end: string[] }
-    | undefined
+  fake.document<{ start: string[]; end: string[] }>(
+    chapterOutlineKey(bookId, chapter),
+  )
 
 describe("saveChapterOutline", () => {
   it("records the outline at the start and at the end of a chapter", async () => {
@@ -182,7 +183,7 @@ describe("chapterDocument", () => {
   ) => {
     const fake = createFakeRedis()
     if (bookName)
-      await fake.client.json.set(`book:${bookId}`, "$", {
+      await setJson(fake.client, `book:${bookId}`, {
         id: bookId,
         name: bookName,
       })

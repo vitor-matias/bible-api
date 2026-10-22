@@ -1,10 +1,10 @@
-import type { createClient, SearchReply } from "redis"
+import type { createClient } from "redis"
+import { mGetJson } from "../../util/jsonStore"
+import { findPhrase, getTextIndex } from "./searchIndex"
 
-// Escapes characters that would break out of the quoted phrase in a
-// RediSearch query, preventing query injection via user-supplied text.
-const escapeSearchPhrase = (text: string): string =>
-  text.replace(/[\\"]/g, String.raw`\$&`)
-
+// `search` must already be normalized (lowercase, accents removed); see
+// normalizeText. Matches are verses containing it as an exact phrase of whole
+// words, in verse order.
 export const searchVerses = async (
   client: ReturnType<typeof createClient>,
   search: string,
@@ -13,47 +13,28 @@ export const searchVerses = async (
 ): Promise<VersePage> => {
   const offset = (page - 1) * pageSize
 
-  // Add filter for number >= 1 in the RediSearch query
-  const results = (await client.ft.SEARCH(
-    "idx:verseText",
-    `@normalizedText: "${escapeSearchPhrase(search)}" @number:[1 +inf]`,
-    {
-      LIMIT: {
-        from: offset,
-        size: pageSize,
-      },
-      SORTBY: {
-        BY: "searchId",
-        DIRECTION: "ASC",
-      },
-    },
-  )) as SearchReply
-
-  if (!results) {
-    return {
-      verses: [],
-      total: 0,
-      currentPage: page,
-      totalPages: 0,
-    }
-  }
-
-  const totalPages = Math.ceil(results.total / pageSize)
+  const { keys, total } = findPhrase(getTextIndex(), search, offset, pageSize)
+  const totalPages = Math.ceil(total / pageSize)
 
   if (page > totalPages) {
     return {
       verses: [],
-      total: results.total,
+      total,
       currentPage: page,
-      totalPages: totalPages,
+      totalPages,
+    }
+  }
+
+  const verses: Verse[] = []
+  for (const verse of await mGetJson<Verse>(client, keys)) {
+    if (verse) {
+      verses.push(verse)
     }
   }
 
   return {
-    verses: results.documents.map(
-      (document) => document.value as unknown as Verse,
-    ),
-    total: results.total,
+    verses,
+    total,
     currentPage: page,
     totalPages,
   }

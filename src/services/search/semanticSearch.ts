@@ -1,15 +1,11 @@
-import type { createClient, SearchReply } from "redis"
-import { EMBEDDING_INDEX } from "../../util/embeddingIndex"
-import { jsonMGet } from "../../util/jsonMGet"
-import { toFloat32Buffer } from "../../util/vectorBuffer"
+import type { createClient } from "redis"
+import { mGetJson } from "../../util/jsonStore"
+import { toQueryVector } from "../../util/vectorBuffer"
 import { generateQueryEmbedding } from "../voyage/embeddings"
+import { getVectorIndex, nearest, type VectorIndex } from "./searchIndex"
 
-// The only field the query returns: the vector itself never leaves the index.
-type EmbeddingDocument = {
-  key: string
-}
-
-// KNN search is capped at this many results; results beyond this offset are unavailable.
+// The search returns at most this many results; results beyond this offset are
+// unavailable.
 export const KNN_MAX_RESULTS = 100
 
 // Contextual embeddings give neighbouring verses similar vectors, so one
@@ -18,10 +14,9 @@ export const KNN_MAX_RESULTS = 100
 // rank order.
 export const MAX_VERSES_PER_CHAPTER = 2
 
-// Neighbours fetched before the chapter cap thins them. Narrative queries
+// Neighbours ranked before the chapter cap thins them. Narrative queries
 // cluster in a few chapters (300 candidates left as few as 29 results), while
-// 1,000 kept the full KNN_MAX_RESULTS window for every query tested and costs
-// a few milliseconds more than 100.
+// 1,000 kept the full KNN_MAX_RESULTS window for every query tested.
 const KNN_CANDIDATES = KNN_MAX_RESULTS * 10
 
 // Keeps verse keys in order, dropping any beyond `perChapter` from a chapter
@@ -39,11 +34,14 @@ export const capPerChapter = (
   })
 }
 
+// `index` is what to rank over: the one loaded at startup unless a caller
+// brings its own.
 export const semanticSearchVerses = async (
   client: ReturnType<typeof createClient>,
   search: string,
   page: number,
   pageSize: number,
+  index?: Pick<VectorIndex, "keys" | "matrix" | "dimensions">,
 ): Promise<VersePage> => {
   const offset = (page - 1) * pageSize
 
@@ -59,33 +57,19 @@ export const semanticSearchVerses = async (
     }
   }
 
-  const queryEmbedding = await generateQueryEmbedding(search)
-  const embeddingBuffer = toFloat32Buffer(queryEmbedding)
+  const queryVector = toQueryVector(await generateQueryEmbedding(search))
 
-  // Always ask for the full window: a KNN query returns at most K documents, so
-  // sizing K to the requested page would make `total` (and therefore
-  // `totalPages`) shrink to that page and hide the rest of the results.
-  const results = (await client.ft.search(
-    EMBEDDING_INDEX,
-    `*=>[KNN ${KNN_CANDIDATES} @embedding $vec AS score]`,
-    {
-      PARAMS: {
-        vec: embeddingBuffer,
-      },
-      LIMIT: {
-        from: 0,
-        size: KNN_CANDIDATES,
-      },
-      SORTBY: {
-        BY: "score",
-        DIRECTION: "ASC",
-      },
-      RETURN: ["key"],
-      DIALECT: 2,
-    },
-  )) as SearchReply
+  // Always rank the full window: sizing it to the requested page would make
+  // `total` (and therefore `totalPages`) shrink to that page and hide the rest
+  // of the results. The cap is applied to all of it before paging, so pages
+  // never overlap and `total` counts what can actually be paged through.
+  const ranked = nearest(index ?? getVectorIndex(), queryVector, KNN_CANDIDATES)
+  const rankedKeys = capPerChapter(ranked.map((result) => result.key)).slice(
+    0,
+    KNN_MAX_RESULTS,
+  )
 
-  if (!results || results.total === 0) {
+  if (rankedKeys.length === 0) {
     return {
       verses: [],
       total: 0,
@@ -94,26 +78,19 @@ export const semanticSearchVerses = async (
     }
   }
 
-  // The cap is applied to the whole ranked window before paging, so pages
-  // never overlap and `total` counts what can actually be paged through.
-  const rankedKeys = capPerChapter(
-    results.documents.map(
-      (doc) => (doc.value as unknown as EmbeddingDocument).key,
-    ),
-  ).slice(0, KNN_MAX_RESULTS)
-  const totalResults = rankedKeys.length
-  const totalPages = Math.ceil(totalResults / pageSize)
+  const totalPages = Math.ceil(rankedKeys.length / pageSize)
+  const pageKeys = rankedKeys.slice(offset, offset + pageSize)
 
-  const verseKeys = rankedKeys.slice(offset, offset + pageSize)
-
-  // One round trip for the whole page.
-  const verses = (await jsonMGet<Verse>(client, verseKeys)).filter(
-    (verse): verse is Verse => verse != null,
-  )
+  const verses: Verse[] = []
+  for (const verse of await mGetJson<Verse>(client, pageKeys)) {
+    if (verse) {
+      verses.push(verse)
+    }
+  }
 
   return {
     verses,
-    total: totalResults,
+    total: rankedKeys.length,
     currentPage: page,
     totalPages,
   }

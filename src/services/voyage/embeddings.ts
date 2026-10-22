@@ -1,6 +1,9 @@
 import { VoyageAIClient } from "voyageai"
 import { createRateLimiter } from "../../util/concurrency"
-import { EMBEDDING_DIMENSIONS, EMBEDDING_MODEL } from "../../util/vectorBuffer"
+import {
+  EMBEDDING_MODEL,
+  getEmbeddingDimensions,
+} from "../../util/vectorBuffer"
 
 // Model API keys created in MongoDB Atlas are served from ai.mongodb.com. A key
 // from the Voyage AI platform, or one scoped to a geography, needs its own
@@ -98,7 +101,7 @@ export const generateChapterEmbeddings = async (
   try {
     const { rawResponse } = await getClient().contextualizedEmbed({
       model: EMBEDDING_MODEL,
-      outputDimension: EMBEDDING_DIMENSIONS,
+      outputDimension: getEmbeddingDimensions(),
       inputType: "document",
       inputs: [sent.map((s) => s.text)],
     })
@@ -134,7 +137,7 @@ export const generateQueryEmbedding = async (
     // A query is a document of one chunk: it has no surrounding context.
     const { rawResponse } = await getClient().contextualizedEmbed({
       model: EMBEDDING_MODEL,
-      outputDimension: EMBEDDING_DIMENSIONS,
+      outputDimension: getEmbeddingDimensions(),
       inputType: "query",
       inputs: [[text]],
     })
