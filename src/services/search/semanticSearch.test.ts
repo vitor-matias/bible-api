@@ -1,7 +1,9 @@
 import assert from "node:assert/strict"
 import { after, before, describe, it } from "node:test"
 import { createFakeRedis } from "../../testing/fakeRedis"
-import { startVoyageStub } from "../../testing/voyageStub"
+import { type StubResponder, startVoyageStub } from "../../testing/voyageStub"
+import { setJson } from "../../util/jsonStore"
+import { getEmbeddingDimensions } from "../../util/vectorBuffer"
 import {
   capPerChapter,
   KNN_MAX_RESULTS,
@@ -80,9 +82,27 @@ describe("capPerChapter", () => {
 
 describe("semanticSearchVerses", () => {
   let stub: Awaited<ReturnType<typeof startVoyageStub>>
+  const DIMENSIONS = getEmbeddingDimensions()
+
+  // Answers every query with the unit vector along the first axis, so a row
+  // scores by how close its angle is to it.
+  const queryAlongFirstAxis: StubResponder = (body, res) => {
+    const embedding = new Array<number>(DIMENSIONS).fill(0)
+    embedding[0] = 1
+    res.writeHead(200, { "content-type": "application/json" })
+    res.end(
+      JSON.stringify({
+        object: "list",
+        model: body.model,
+        usage: { total_tokens: 1 },
+        data: [{ index: 0, data: [{ index: 0, embedding }] }],
+      }),
+    )
+  }
 
   before(async () => {
     stub = await startVoyageStub()
+    stub.respondWith(queryAlongFirstAxis)
     process.env.VOYAGE_API_KEY = "al-test"
     process.env.VOYAGE_BASE_URL = stub.url
   })
@@ -91,8 +111,8 @@ describe("semanticSearchVerses", () => {
     await stub.close()
   })
 
-  // The index's ranked answer, best first: three verses of Romans 13 ahead of
-  // the parallels elsewhere.
+  // The ranked answer, best first: three verses of Romans 13 ahead of the
+  // parallels elsewhere.
   const ranked = [
     key("rom", 13, 8),
     key("rom", 13, 9),
@@ -101,62 +121,100 @@ describe("semanticSearchVerses", () => {
     key("lev", 19, 18),
   ]
 
-  const searchOver = async (keys: string[]) => {
-    const calls: { query: string; options: { LIMIT: { size: number } } }[] = []
-    const fake = createFakeRedis((_index, query, options) => {
-      calls.push({ query, options: options as { LIMIT: { size: number } } })
-      return {
-        total: keys.length,
-        documents: keys.map((verseKey) => ({
-          id: verseKey.replace("verse:", "embedding:"),
-          value: { key: verseKey },
-        })),
-      }
+  // An index holding `keys` in rank order against a query along the first axis:
+  // each row is turned a little further from it than the one before.
+  const indexOf = (keys: string[]) => {
+    const matrix = new Float32Array(keys.length * DIMENSIONS)
+    keys.forEach((_, row) => {
+      matrix[row * DIMENSIONS] = Math.cos(row * 0.001)
+      matrix[row * DIMENSIONS + 1] = Math.sin(row * 0.001)
     })
+    return { keys, matrix, dimensions: DIMENSIONS }
+  }
+
+  const searchOver = async (keys: string[]) => {
+    const fake = createFakeRedis()
     for (const verseKey of keys) {
       const [, bookId, chapter, verse] = verseKey.split(":")
-      await fake.client.json.set(verseKey, "$", {
+      await setJson(fake.client, verseKey, {
         bookId,
         chapterNumber: Number(chapter),
         number: Number(verse),
       })
     }
-    return { client: fake.client, calls }
+    return { client: fake.client, index: indexOf(keys) }
   }
 
   const refs = (page: { verses: Verse[] }) =>
     page.verses.map((v) => `${v.bookId} ${v.chapterNumber}:${v.number}`)
 
   it("caps each chapter at two verses before paging", async () => {
-    const { client, calls } = await searchOver(ranked)
+    const { client, index } = await searchOver(ranked)
 
-    const first = await semanticSearchVerses(client, "amar o próximo", 1, 2)
-    const second = await semanticSearchVerses(client, "amar o próximo", 2, 2)
+    const first = await semanticSearchVerses(
+      client,
+      "amar o próximo",
+      1,
+      2,
+      index,
+    )
+    const second = await semanticSearchVerses(
+      client,
+      "amar o próximo",
+      2,
+      2,
+      index,
+    )
 
     assert.deepEqual(refs(first), ["rom 13:8", "rom 13:9"])
     assert.deepEqual(refs(second), ["mrk 12:31", "lev 19:18"])
     assert.equal(first.total, 4)
     assert.equal(first.totalPages, 2)
     assert.equal(second.currentPage, 2)
-    // Enough neighbours are fetched for the cap to still fill the window.
-    assert.match(calls[0].query, /KNN 1000 @embedding/)
-    assert.equal(calls[0].options.LIMIT.size, 1000)
   })
 
   it("keeps the window at KNN_MAX_RESULTS after the cap", async () => {
     const many = Array.from({ length: 150 }, (_, i) => key("psa", i + 1, 1))
-    const { client } = await searchOver(many)
+    const { client, index } = await searchOver(many)
 
-    const page = await semanticSearchVerses(client, "louvor", 1, 10)
+    const page = await semanticSearchVerses(client, "louvor", 1, 10, index)
 
     assert.equal(page.total, KNN_MAX_RESULTS)
     assert.equal(page.totalPages, KNN_MAX_RESULTS / 10)
   })
 
-  it("returns an empty page when nothing matches", async () => {
-    const { client } = await searchOver([])
+  it("ranks far more neighbours than the window before capping", async () => {
+    // Three chapters hold the 450 best matches; a window of only 100
+    // neighbours would be left with two verses once the cap thinned them.
+    const clustered = ["mat", "mrk", "luk"].flatMap((book) =>
+      Array.from({ length: 150 }, (_, i) => key(book, 5, i + 1)),
+    )
+    const elsewhere = Array.from({ length: 100 }, (_, i) =>
+      key("psa", i + 1, 1),
+    )
+    const { client, index } = await searchOver([...clustered, ...elsewhere])
 
-    assert.deepEqual(await semanticSearchVerses(client, "nada", 1, 10), {
+    const page = await semanticSearchVerses(
+      client,
+      "bem-aventurados",
+      1,
+      10,
+      index,
+    )
+
+    assert.equal(page.total, KNN_MAX_RESULTS)
+    assert.deepEqual(refs(page).slice(0, 4), [
+      "mat 5:1",
+      "mat 5:2",
+      "mrk 5:1",
+      "mrk 5:2",
+    ])
+  })
+
+  it("returns an empty page when nothing matches", async () => {
+    const { client, index } = await searchOver([])
+
+    assert.deepEqual(await semanticSearchVerses(client, "nada", 1, 10, index), {
       verses: [],
       total: 0,
       currentPage: 1,
@@ -165,13 +223,12 @@ describe("semanticSearchVerses", () => {
   })
 
   it("does not call the API for a page beyond the window", async () => {
-    const { client, calls } = await searchOver(ranked)
+    const { client, index } = await searchOver(ranked)
     stub.requests.length = 0
 
-    const page = await semanticSearchVerses(client, "amar", 11, 10)
+    const page = await semanticSearchVerses(client, "amar", 11, 10, index)
 
     assert.equal(page.total, 0)
     assert.equal(stub.requests.length, 0)
-    assert.equal(calls.length, 0)
   })
 })

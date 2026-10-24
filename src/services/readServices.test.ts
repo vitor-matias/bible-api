@@ -3,6 +3,7 @@ import { describe, it } from "node:test"
 import { fakeBible } from "../testing/bibleFixture"
 import { createFakeRedis } from "../testing/fakeRedis"
 import { NotFoundError } from "../util/errors"
+import { setJson } from "../util/jsonStore"
 import { getBook } from "./book/getBook"
 import {
   chapterTitleKey,
@@ -96,8 +97,12 @@ describe("getBook", () => {
 
   it("surfaces errors other than a missing chapter", async () => {
     const { client } = await fakeBible()
-    Object.assign(client.json, {
-      mGet: async () => {
+    // The first MGET reads the chapter titles; the ones after it read chapters.
+    const mGet = client.mGet.bind(client)
+    let calls = 0
+    Object.assign(client, {
+      mGet: async (keys: string[]) => {
+        if (calls++ === 0) return mGet(keys)
         throw new Error("connection lost")
       },
     })
@@ -107,7 +112,7 @@ describe("getBook", () => {
 
   it("returns an empty chapter list for a book with none, and null for no book", async () => {
     const { client } = createFakeRedis()
-    await client.json.set("book:frt", "$", { id: "frt", chapterCount: 0 })
+    await setJson(client, "book:frt", { id: "frt", chapterCount: 0 })
 
     assert.deepEqual((await getBook(client, "frt"))?.chapters, [])
     assert.equal(await getBook(client, "xyz"), null)
@@ -125,7 +130,7 @@ describe("getIntro / listIntros", () => {
     await client.rPush(INTRO_LIST_KEY, "pentateuco")
     // A slug listed without a document behind it is skipped.
     await client.rPush(INTRO_LIST_KEY, "missing")
-    await client.json.set(introKey("pentateuco"), "$", intro)
+    await setJson(client, introKey("pentateuco"), intro)
 
     assert.deepEqual(await getIntro(client, "pentateuco"), intro)
     assert.equal(await getIntro(client, "missing"), null)

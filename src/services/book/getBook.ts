@@ -1,6 +1,7 @@
 import type { createClient } from "redis"
 import { mapWithConcurrency } from "../../util/concurrency"
 import { NotFoundError } from "../../util/errors"
+import { getJson } from "../../util/jsonStore"
 import { chapterTitleKey } from "../chapter/getBookChapterTitle"
 import { getChapter } from "../chapter/getChapter"
 
@@ -14,7 +15,7 @@ export const getBook = async (
   bookId: Book["id"],
   getChapters = false,
 ): Promise<Book | null> => {
-  const book = (await client.json.get(`book:${bookId}`)) as Book | null
+  const book = await getJson<Book>(client, `book:${bookId}`)
 
   if (!book) return null
 

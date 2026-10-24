@@ -1,10 +1,12 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import type { Request, Response } from "express"
+import { loadSearchIndex } from "../services/search/searchIndex"
 import { fakeBible } from "../testing/bibleFixture"
 import { fakeRequest, fakeResponse } from "../testing/fakeExpress"
 import { createFakeRedis } from "../testing/fakeRedis"
 import { setImportState } from "../util/importState"
+import { setJson } from "../util/jsonStore"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
@@ -158,7 +160,7 @@ describe("getIntroController / getIntrosController", () => {
   it("lists introductions and returns one by slug", async () => {
     const { client } = createFakeRedis()
     await client.rPush("intros", "geral")
-    await client.json.set("intro:geral", "$", {
+    await setJson(client, "intro:geral", {
       slug: "geral",
       name: "Introdução geral",
       introduction: [],
@@ -180,41 +182,38 @@ describe("getIntroController / getIntrosController", () => {
 })
 
 describe("searchVersesController", () => {
-  const verseHit = (number: number) => ({
-    id: `verse:gen:1:${number}`,
-    value: { number },
-  })
+  // The fixture's verses read "v1", "v2", "v3": "v1" is in Genesis 1:1 and 2:1.
+  const loadedFixture = async () => {
+    const { client } = await fakeBible()
+    await loadSearchIndex(client)
+    return client
+  }
 
-  it("runs an escaped phrase search on the normalized text", async () => {
-    const queries: string[] = []
-    const { client } = createFakeRedis((_index, query) => {
-      queries.push(query)
-      return { total: 2, documents: [verseHit(1), verseHit(2)] }
-    })
+  const refs = (body: unknown) =>
+    (body as VersePage).verses.map((v) => `${v.chapterNumber}:${v.number}`)
+
+  it("finds a whole-word phrase in the loaded index, normalized and in verse order", async () => {
+    const client = await loadedFixture()
 
     const sent = await call(
       searchVersesController,
       client,
-      { query: { text: ' Ação "x" ', page: "1", limit: "10" } },
-      { searchText: 'Ação "x"' },
+      { query: { text: " V1 ", page: "1", limit: "10" } },
+      { searchText: "V1" },
     )
 
-    assert.deepEqual(queries, [
-      String.raw`@normalizedText: "acao \"x\"" @number:[1 +inf]`,
-    ])
-    assert.deepEqual(sent.body, {
-      verses: [{ number: 1 }, { number: 2 }],
-      total: 2,
-      currentPage: 1,
-      totalPages: 1,
-    })
+    assert.deepEqual(refs(sent.body), ["1:1", "2:1"])
+    assert.deepEqual(
+      { ...(sent.body as VersePage), verses: [] },
+      { verses: [], total: 2, currentPage: 1, totalPages: 1 },
+    )
   })
 
   it("answers past the last page with no verses, and 500s a failed search", async () => {
-    const { client } = createFakeRedis(() => ({ total: 2, documents: [] }))
+    const client = await loadedFixture()
 
     const past = await call(searchVersesController, client, {
-      query: { text: "amor", page: "3", limit: "1" },
+      query: { text: "v1", page: "3", limit: "1" },
     })
     assert.deepEqual(past.body, {
       verses: [],
@@ -223,11 +222,14 @@ describe("searchVersesController", () => {
       totalPages: 2,
     })
 
-    const failing = createFakeRedis(() => {
-      throw new Error("syntax error")
-    })
-    const failed = await call(searchVersesController, failing.client, {
-      query: { text: "amor" },
+    // The hits are found in memory; reading their verses is what fails here.
+    const failing = {
+      mGet: async () => {
+        throw new Error("connection lost")
+      },
+    } as unknown as Client
+    const failed = await call(searchVersesController, failing, {
+      query: { text: "v1" },
     })
     assert.deepEqual(failed, { status: 500, body: { error: "Search failed" } })
   })

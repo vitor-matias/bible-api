@@ -1,6 +1,7 @@
 import { chapterTitleKey } from "../services/chapter/getBookChapterTitle"
 import { chapterVerseMaxKey } from "../services/chapter/verseCountKey"
 import { verseKey } from "../services/verse/getVerse"
+import { setJson } from "../util/jsonStore"
 import { createFakeRedis } from "./fakeRedis"
 
 export const verse = (
@@ -24,7 +25,7 @@ export const fakeBible = async () => {
   const { client } = fake
 
   await client.rPush("books", "gen")
-  await client.json.set("book:gen", "$", {
+  await setJson(client, "book:gen", {
     id: "gen",
     name: "Génesis",
     shortName: "Gn",
@@ -37,9 +38,9 @@ export const fakeBible = async () => {
     [2, [1, 2]],
   ] as const) {
     for (const number of numbers) {
-      await client.json.set(
+      await setJson(
+        client,
         verseKey("gen", chapter, number),
-        "$",
         verse("gen", chapter, number),
       )
     }

@@ -8,6 +8,8 @@ import {
   startVoyageStub,
 } from "../../testing/voyageStub"
 import type { TaskPool } from "../../util/concurrency"
+import { setJson } from "../../util/jsonStore"
+import { getEmbeddingDimensions } from "../../util/vectorBuffer"
 import { chapterOutlineKey } from "./chapterDocument"
 import { EMBEDDING_FAILURES_KEY, storeChapter } from "./storeChapter"
 
@@ -46,7 +48,7 @@ const capturingPool = () => {
 
 const storeLuke10 = async () => {
   const fake = createFakeRedis()
-  await fake.client.json.set("book:luk", "$", {
+  await setJson(fake.client, "book:luk", {
     id: "luk",
     name: "Evangelho de São Lucas",
   })
@@ -72,10 +74,10 @@ describe("storeChapter", () => {
     const { fake, tasks } = await storeLuke10()
 
     for (const n of [0, 1, 2, 3, 4]) {
-      assert.ok(fake.json.has(`verse:luk:10:${n}`), `verse ${n} stored`)
+      assert.ok(fake.strings.has(`verse:luk:10:${n}`), `verse ${n} stored`)
     }
     assert.equal(fake.strings.get("chapterVerseMax:luk:10"), "4")
-    assert.deepEqual(fake.json.get(chapterOutlineKey("luk", 10)), {
+    assert.deepEqual(fake.document(chapterOutlineKey("luk", 10)), {
       start: ["", "", "Missão dos setenta e dois discípulos", ""],
       end: ["", "", "Parábola do bom samaritano", ""],
     })
@@ -101,11 +103,11 @@ describe("storeChapter", () => {
         "Jesus respondeu.",
       ],
     ])
+    // Each vector is stored under its own key as raw float32 bytes.
     for (const n of [1, 2, 3, 4]) {
-      const hash = fake.hashes.get(`embedding:luk:10:${n}`)
-      assert.ok(hash, `vector stored for verse ${n}`)
-      assert.equal(hash.key, `verse:luk:10:${n}`)
-      assert.equal((hash.embedding as Buffer).length, 1024 * 4)
+      const vector = fake.strings.get(`embedding:luk:10:${n}`)
+      assert.ok(Buffer.isBuffer(vector), `vector stored for verse ${n}`)
+      assert.equal(vector.length, getEmbeddingDimensions() * 4)
     }
   })
 
@@ -119,6 +121,9 @@ describe("storeChapter", () => {
       [...(fake.sets.get(EMBEDDING_FAILURES_KEY) ?? [])],
       ["luk:10"],
     )
-    assert.equal(fake.hashes.size, 0)
+    assert.deepEqual(
+      [...fake.strings.keys()].filter((key) => key.startsWith("embedding:")),
+      [],
+    )
   })
 })
