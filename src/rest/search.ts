@@ -46,6 +46,14 @@ export const searchVersesController = async (req: Request, res: Response) => {
         pageNumber,
         limitNumber,
       )
+      // A nearest-neighbour query always has neighbours, so none means the
+      // vector index is empty. Answering 200 [] would be cached as "no
+      // matches" (here and by any proxy) and outlive the empty index.
+      if (result.total === 0) {
+        return res.status(503).json({
+          error: "Semantic search is unavailable: the embedding index is empty",
+        })
+      }
       return res.json(result)
     } catch (error) {
       console.error("Semantic search error:", error)

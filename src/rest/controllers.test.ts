@@ -1,9 +1,10 @@
 import assert from "node:assert/strict"
-import { describe, it } from "node:test"
+import { after, before, describe, it } from "node:test"
 import type { Request, Response } from "express"
 import { fakeBible } from "../testing/bibleFixture"
 import { fakeRequest, fakeResponse } from "../testing/fakeExpress"
 import { createFakeRedis } from "../testing/fakeRedis"
+import { startVoyageStub } from "../testing/voyageStub"
 import { setImportState } from "../util/importState"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
@@ -261,5 +262,32 @@ describe("searchVersesController", () => {
       status: 500,
       body: { error: "Semantic search failed" },
     })
+  })
+})
+
+// Last in the file: the "cannot be embedded" test above needs the Voyage client
+// not to exist yet, and this one creates it.
+describe("searchVersesController with an embedding service", () => {
+  let stub: Awaited<ReturnType<typeof startVoyageStub>>
+
+  before(async () => {
+    stub = await startVoyageStub()
+    process.env.VOYAGE_API_KEY = "al-test"
+    process.env.VOYAGE_BASE_URL = stub.url
+  })
+
+  after(async () => {
+    await stub.close()
+  })
+
+  it("answers 503, not a cacheable empty page, when the vector index is empty", async () => {
+    const { client } = createFakeRedis(() => ({ total: 0, documents: [] }))
+    setImportState("ready")
+
+    const sent = await call(searchVersesController, client, {
+      query: { text: "porta", semantic: "true", limit: "50" },
+    })
+
+    assert.equal(sent.status, 503)
   })
 })
