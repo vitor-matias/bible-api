@@ -290,4 +290,23 @@ describe("searchVersesController with an embedding service", () => {
 
     assert.equal(sent.status, 503)
   })
+
+  it("answers 503 without embedding the query while the index is rebuilding", async () => {
+    const { client } = createFakeRedis(undefined, () => ({ indexing: 1 }))
+    setImportState("ready")
+    const before = stub.requests.length
+
+    const sent = await call(searchVersesController, client, {
+      query: { text: "jesus", semantic: "true" },
+    })
+
+    assert.deepEqual(sent, {
+      status: 503,
+      body: {
+        error:
+          "Semantic search is unavailable: the embedding index is rebuilding",
+      },
+    })
+    assert.equal(stub.requests.length, before)
+  })
 })
