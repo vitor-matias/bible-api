@@ -102,9 +102,10 @@ describe("semanticSearchVerses", () => {
   ]
 
   const searchOver = async (keys: string[]) => {
-    const calls: { query: string; options: { LIMIT: { size: number } } }[] = []
+    type Options = { LIMIT: { size: number }; TIMEOUT: number }
+    const calls: { query: string; options: Options }[] = []
     const fake = createFakeRedis((_index, query, options) => {
-      calls.push({ query, options: options as { LIMIT: { size: number } } })
+      calls.push({ query, options: options as Options })
       return {
         total: keys.length,
         documents: keys.map((verseKey) => ({
@@ -141,6 +142,8 @@ describe("semanticSearchVerses", () => {
     // Enough neighbours are fetched for the cap to still fill the window.
     assert.match(calls[0].query, /KNN 1000 @embedding/)
     assert.equal(calls[0].options.LIMIT.size, 1000)
+    // Above RediSearch's 500 ms default, which ends a slow KNN with no results.
+    assert.ok(calls[0].options.TIMEOUT > 500)
   })
 
   it("keeps the window at KNN_MAX_RESULTS after the cap", async () => {
