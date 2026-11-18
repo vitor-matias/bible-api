@@ -1,9 +1,8 @@
 import type { createClient } from "redis"
 import type { TaskPool } from "../../util/concurrency"
-import { EMBEDDING_KEY_PREFIX } from "../../util/embeddingIndex"
-import { toFloat32Buffer } from "../../util/vectorBuffer"
+import { encodeVector } from "../../util/vectorBuffer"
 import { chapterVerseMaxKey } from "../chapter/verseCountKey"
-import { verseKey } from "../verse/getVerse"
+import { embeddingKey } from "../search/embeddingKey"
 import { generateChapterEmbeddings } from "../voyage/embeddings"
 import { chapterDocument, saveChapterOutline } from "./chapterDocument"
 import { extractVerseText, storeVerse } from "./storeVerse"
@@ -223,7 +222,8 @@ export const storeChapter = async (
 }
 
 // Embeds a chapter's verses in one Voyage call and writes the vectors in one
-// pipelined round trip. Throws if either step fails.
+// pipelined round trip, as raw float32 buffers (see vectorBuffer.ts) rather
+// than RedisJSON. Throws if either step fails.
 export const embedAndStoreVerses = async (
   client: ReturnType<typeof createClient>,
   versesData: VerseForEmbedding[],
@@ -243,21 +243,17 @@ export const embedAndStoreVerses = async (
     )
   }
 
-  // Each vector is kept as its raw float32 bytes in a hash: RedisJSON would
-  // spend ~27 bytes per number, turning a 4 KB vector into ~27 KB. A vector
-  // of the wrong length makes toFloat32Buffer throw, so the chapter counts as
-  // an embedding failure instead of being stored unindexed. Encoding
-  // everything before queueing keeps a bad vector from leaving a half-written
-  // chapter.
+  // Each vector is kept as its raw float32 bytes (see vectorBuffer.ts), not a
+  // RedisJSON array, which would cost several times as much. encodeVector
+  // rejects a vector of the wrong length, which surfaces here as a rejected
+  // chapter instead of being stored and later misread. Encoding everything
+  // before queueing keeps a bad vector from leaving a half-written chapter.
   const multi = client.multi()
   for (let i = 0; i < versesData.length; i++) {
     const v = versesData[i].verseData
-    multi.hSet(
-      `${EMBEDDING_KEY_PREFIX}${v.bookId}:${v.chapterNumber}:${v.number}`,
-      {
-        key: verseKey(v.bookId, v.chapterNumber, v.number),
-        embedding: toFloat32Buffer(embeddings[i]),
-      },
+    multi.set(
+      embeddingKey(v.bookId, v.chapterNumber, v.number),
+      encodeVector(embeddings[i]),
     )
   }
   await multi.exec()

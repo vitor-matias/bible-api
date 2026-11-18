@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { setJson } from "../../util/jsonStore"
 import { normalizeText } from "../../util/normalizeText"
 
 export const INTRO_LIST_KEY = "intros"
@@ -80,7 +81,7 @@ export const storeIntro = async (
 
   await client.rPush(INTRO_LIST_KEY, storedSlug)
 
-  await client.json.set(introKey(storedSlug), "$", {
+  await setJson(client, introKey(storedSlug), {
     slug: storedSlug,
     name,
     introduction,

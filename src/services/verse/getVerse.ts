@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { getJson } from "../../util/jsonStore"
 
 export const verseKey = (
   bookId: Book["id"],
@@ -19,12 +20,5 @@ export const getVerseByKey = async (
   client: ReturnType<typeof createClient>,
   key: string,
 ): Promise<Verse | null> => {
-  const result = await client.json.get(key)
-
-  if (!result) {
-    return null
-  }
-  const verseData = result
-
-  return verseData as Verse
+  return getJson<Verse>(client, key)
 }
