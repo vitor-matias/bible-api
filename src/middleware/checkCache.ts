@@ -36,17 +36,17 @@ export const checkCache = async (
     const originalJson = res.json.bind(res)
 
     // Override the json function to cache successful responses only. The body
-    // is serialized once and that string is both cached and sent, rather than
-    // stringified here and again by res.json (a ~20 MB body would be built
-    // twice on the event loop).
+    // is still sent by Express's own json(), never as a raw string through
+    // send(): that keeps its JSON encoding and content type in one place, and
+    // is the sink SonarCloud's XSS analysis recognises as safe. The price is a
+    // second serialization on a 200 cache miss, which the TTL and the
+    // full-book rate limit keep rare.
     res.json = (body) => {
-      const payload = JSON.stringify(body)
-
-      // undefined has no JSON form; let Express handle it as it always did.
-      if (payload === undefined) return originalJson(body)
-
       // Only 200s are cached, so the status never needs storing alongside.
-      if (res.statusCode === 200) {
+      const payload = res.statusCode === 200 ? JSON.stringify(body) : undefined
+
+      // undefined has no JSON form, so there is nothing to cache.
+      if (payload !== undefined) {
         if (Buffer.byteLength(payload) <= MAX_CACHEABLE_BYTES) {
           // SET carries its own expiry, so a key can never be left without a
           // TTL (volatile-lru only evicts keys that have one).
@@ -59,7 +59,7 @@ export const checkCache = async (
           console.warn("Response too large to cache")
         }
       }
-      return res.type("application/json").send(payload)
+      return originalJson(body)
     }
 
     next()
