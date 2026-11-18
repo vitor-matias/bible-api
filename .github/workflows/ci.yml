@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [master, intro-support]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests and SonarCloud analysis
+    runs-on: ubuntu-latest
+    env:
+      # Only whether the secret is set: the token itself reaches the scan step
+      # alone, never the steps that run dependency and test code.
+      HAS_SONAR_TOKEN: ${{ secrets.SONAR_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Sonar reads the full history to tell new code from old.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+
+      # No dependency needs an install script, so none are allowed to run.
+      - run: npm ci --ignore-scripts
+
+      - run: npm run test:coverage
+
+      # CI-based analysis is what imports coverage; SonarCloud's automatic
+      # analysis cannot. Skipped while the SONAR_TOKEN secret is unset, so the
+      # tests still gate the build before the switch is made.
+      - name: SonarCloud scan
+        if: env.HAS_SONAR_TOKEN == 'true'
+        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

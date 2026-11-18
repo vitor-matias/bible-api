@@ -1,0 +1,27 @@
+// The model services/voyage/embeddings.ts calls, the vector size it requests,
+// and what the vector index (embeddingIndex.ts) is built for. They live beside
+// the encoder so a change to one cannot leave the others behind. The API is
+// asked for EMBEDDING_DIMENSIONS explicitly (1024 is voyage-context-4's
+// default; it also offers 256, 512 and 2048), and a size the model cannot
+// produce is rejected by the API instead of filling the index with vectors it
+// skips.
+// Changing either value invalidates every stored vector, so bump
+// IMPORT_COMPLETE_KEY in index.ts with it.
+export const EMBEDDING_MODEL = "voyage-context-4"
+export const EMBEDDING_DIMENSIONS = 1024
+export const EMBEDDING_VECTOR_TYPE = "FLOAT32"
+
+// RediSearch reads a FLOAT32 vector as its raw bytes. Stored embeddings and
+// query vectors both go through here so they can never disagree on encoding.
+//
+// HSET accepts a blob of any length, but the index silently skips one that is
+// not EMBEDDING_DIMENSIONS floats long, so that is rejected here, where the
+// import can still count it as a failure.
+export const toFloat32Buffer = (vector: number[]): Buffer => {
+  if (vector.length !== EMBEDDING_DIMENSIONS) {
+    throw new Error(
+      `Expected a ${EMBEDDING_DIMENSIONS}-dimension embedding, got ${vector.length}`,
+    )
+  }
+  return Buffer.from(new Float32Array(vector).buffer)
+}
