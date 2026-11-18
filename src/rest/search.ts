@@ -4,6 +4,7 @@ import {
   KNN_MAX_RESULTS,
   semanticSearchVerses,
 } from "../services/search/semanticSearch"
+import { getEmbeddingIndexInfo } from "../util/embeddingIndex"
 import { isSemanticSearchAvailable } from "../util/importState"
 import { normalizeText } from "../util/normalizeText"
 
@@ -40,12 +41,31 @@ export const searchVersesController = async (req: Request, res: Response) => {
     }
 
     try {
+      // After a Redis restart RediSearch rebuilds the vector index in the
+      // background, and KNN answers from whatever it has indexed so far —
+      // often nothing — without any error. Checked before the Voyage call.
+      if (Number((await getEmbeddingIndexInfo(client)).indexing) > 0) {
+        return res.status(503).json({
+          error:
+            "Semantic search is unavailable: the embedding index is rebuilding",
+        })
+      }
+
       const result = await semanticSearchVerses(
         client,
         searchText,
         pageNumber,
         limitNumber,
       )
+      // A nearest-neighbour query over a complete index always has
+      // neighbours, so none means the index is not usable right now.
+      // Answering 200 [] would be cached as "no matches" (here and by any
+      // proxy) and outlive the outage.
+      if (result.total === 0) {
+        return res.status(503).json({
+          error: "Semantic search is unavailable: the embedding index is empty",
+        })
+      }
       return res.json(result)
     } catch (error) {
       console.error("Semantic search error:", error)

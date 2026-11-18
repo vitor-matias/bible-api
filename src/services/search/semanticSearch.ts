@@ -69,6 +69,10 @@ export const MAX_VERSES_PER_CHAPTER = 2
 // a few milliseconds more than 100.
 const KNN_CANDIDATES = KNN_MAX_RESULTS * 10
 
+// Per-query timeout for the KNN search, well above what it takes in production
+// (up to about a second), so it never ends early with partial results.
+const KNN_TIMEOUT_MS = 10_000
+
 // Keeps verse keys in order, dropping any beyond `perChapter` from a chapter
 // already represented. A verse key is "verse:<book>:<chapter>:<verse>".
 export const capPerChapter = (
@@ -126,6 +130,10 @@ export const semanticSearchVerses = async (
         DIRECTION: "ASC",
       },
       RETURN: ["key", "score"],
+      // RediSearch's default 500 ms timeout returns whatever it has found so
+      // far, often nothing, with no error. A KNN over KNN_CANDIDATES regularly
+      // takes longer than that in production, so it gets its own bound.
+      TIMEOUT: KNN_TIMEOUT_MS,
       DIALECT: 2,
     },
   )) as SearchReply

@@ -26,13 +26,13 @@ const serve = async (
 }
 
 describe("checkCache", () => {
-  it("stores a 200 under a namespaced key and replays it verbatim", async () => {
+  it("stores a 200 under a namespaced key and replays it verbatim as JSON", async () => {
     const fake = createFakeRedis()
 
     const miss = await serve(fake.client, 200, OK)
     assert.equal(miss.reachedHandler, true)
-    assert.equal(miss.sent.body, '{"ok":true}')
-    assert.equal(miss.sent.type, "application/json")
+    // A miss goes out through Express's own json().
+    assert.deepEqual(miss.sent.body, OK)
     assert.equal(fake.strings.get(`cache:${URL}`), '{"ok":true}')
 
     const hit = await serve(fake.client, 200, { ok: false })
@@ -68,7 +68,7 @@ describe("checkCache", () => {
 
     const { sent } = await serve(fake.client, 200, OK)
 
-    assert.equal(sent.body, '{"ok":true}')
+    assert.deepEqual(sent.body, OK)
   })
 
   it("passes the request on when the cache cannot be read", async () => {
