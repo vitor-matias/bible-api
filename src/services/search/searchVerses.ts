@@ -2,7 +2,7 @@ import type { createClient, SearchReply } from "redis"
 
 // Escapes characters that would break out of the quoted phrase in a
 // RediSearch query, preventing query injection via user-supplied text.
-const escapeSearchPhrase = (text: string): string =>
+export const escapeSearchPhrase = (text: string): string =>
   text.replace(/[\\"]/g, String.raw`\$&`)
 
 export const searchVerses = async (
