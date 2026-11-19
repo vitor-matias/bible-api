@@ -5,6 +5,7 @@ import { fullBookRateLimit, searchRateLimit } from "../middleware/rateLimiter"
 import { validateBooksParams } from "../middleware/validateBooksParams"
 import { validateQueryParams } from "../middleware/validateQueryParams"
 import { validateSearchParams } from "../middleware/validateSearchParams"
+import { loadAudioIndex, makeAudioController } from "./audio"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
@@ -74,6 +75,14 @@ export default (app: express.Express): void => {
   const validateSearchQueryParams = validateQueryParams(
     ["text", "page", "limit", "semantic"],
     ["semantic"],
+  )
+
+  // Before the verse route, whose shape would otherwise swallow it. Not
+  // cached: it is an in-memory lookup.
+  app.get(
+    "/v1/audio/:book/:chapter",
+    noQueryParams,
+    makeAudioController(loadAudioIndex()),
   )
 
   // Endpoint to get a specific verse
