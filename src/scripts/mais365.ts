@@ -92,7 +92,8 @@ const lastVerse = async (bookId: string, chapter: number): Promise<string> => {
   const response = await fetch(`${API}/v1/${bookId}/${chapter}`)
   if (!response.ok) return ""
   const { verses } = (await response.json()) as { verses: ApiVerse[] }
-  const last = verses.reduce((a, b) => (b.number > a.number ? b : a))
+  if (!verses.length) return ""
+  const last = verses.reduce((a, b) => (b.number > a.number ? b : a), verses[0])
   return last.text
     .filter((t) => ["text", "quote", "paragraph"].includes(t.type))
     .map((t) => t.text)

@@ -60,6 +60,15 @@ const chaptersOf = (numbers: string, book: BookName): number[] => {
   return chapters
 }
 
+/** Up to the first full stop that ends a sentence, not a "3.5" in a number. */
+const untilSentenceEnd = (text: string): string => {
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "." && !/\d/.test(text[i + 1] ?? ""))
+      return text.slice(0, i)
+  }
+  return text
+}
+
 /**
  * The readings an episode description announces, e.g. "Hoje vamos ler
  * Génesis 37; Job 27–28; Provérbios 3:25-27." Parts it cannot place are
@@ -69,24 +78,32 @@ export const parseReadings = (
   description: string,
   books: BookName[],
 ): { readings: Reading[]; unparsed: string[] } => {
-  const text = description.replace(/<[^>]+>/g, " ")
-  const announced = /vamos (?:ler|ouvir)\s*:?\s*([\s\S]*?)(?:\.(?!\d)|$)/.exec(
-    text,
-  )
+  // Tags out, whitespace in one run: what follows reads plain text. Each
+  // pattern here is linear, so a hostile description can't stall the parse.
+  const text = description.replace(/<[^<>]*>/g, " ").replace(/\s+/g, " ")
+  const after = /vamos (?:ler|ouvir)/.exec(text)
+  const announced =
+    after &&
+    untilSentenceEnd(
+      text.slice(after.index + after[0].length).replace(/^[ :]+/, ""),
+    )
   const readings: Reading[] = []
   const unparsed: string[] = []
-  if (!announced) return { readings, unparsed }
+  if (announced === null) return { readings, unparsed }
 
   let book: BookName | undefined
-  for (const raw of announced[1].split(/;|,|\s+e\s+/)) {
+  for (const raw of announced.split(/;|,| e /)) {
     const part = raw.trim().replace(/^(?:o|a|os|as)\s+/i, "")
     // Ester's Greek additions are lettered (Ester 5, D, 6–7) and have no
     // chapter number here.
     if (part === "" || /^[A-F]$/.test(part)) continue
-    const named = /^((?:[1-3]\s*)?[^\d]+?)\s*(\d.*)?$/.exec(part)
-    const namedBook = named && findBook(named[1], books)
+    // "1 Samuel 21-22": the name runs to the first digit after any "1 ".
+    const prefix = /^[1-3] ?/.exec(part)?.[0] ?? ""
+    const digit = part.slice(prefix.length).search(/\d/)
+    const split = digit < 0 ? part.length : prefix.length + digit
+    const namedBook = findBook(part.slice(0, split).trim(), books)
     if (namedBook) book = namedBook
-    const numbers = namedBook ? (named[2] ?? "") : part
+    const numbers = namedBook ? part.slice(split) : part
     const chapters =
       book && /^\d|^$/.test(numbers) ? chaptersOf(numbers, book) : []
     if (!book || chapters.length === 0) {
