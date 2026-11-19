@@ -8,6 +8,7 @@ import * as os from "node:os"
 import * as path from "node:path"
 import {
   type BookName,
+  findChapterEnd,
   findChapterStarts,
   parseReadings,
   type Segment,
@@ -75,12 +76,27 @@ const transcribe = async (guid: string, url: string): Promise<Segment[]> => {
     fs.rmSync(wav)
   }
   const { transcription } = JSON.parse(fs.readFileSync(json, "utf8")) as {
-    transcription: { offsets: { from: number }; text: string }[]
+    transcription: { offsets: { from: number; to: number }; text: string }[]
   }
   return transcription.map((s) => ({
     start: s.offsets.from / 1000,
+    end: s.offsets.to / 1000,
     text: s.text,
   }))
+}
+
+type ApiVerse = { number: number; text: { type: string; text: string }[] }
+
+/** The text of a chapter's last verse, as the app shows it. */
+const lastVerse = async (bookId: string, chapter: number): Promise<string> => {
+  const response = await fetch(`${API}/v1/${bookId}/${chapter}`)
+  if (!response.ok) return ""
+  const { verses } = (await response.json()) as { verses: ApiVerse[] }
+  const last = verses.reduce((a, b) => (b.number > a.number ? b : a))
+  return last.text
+    .filter((t) => ["text", "quote", "paragraph"].includes(t.type))
+    .map((t) => t.text)
+    .join(" ")
 }
 
 const main = async () => {
@@ -88,7 +104,13 @@ const main = async () => {
   const books = (await (await fetch(`${API}/v1/books`)).json()) as BookName[]
   const feed = await (await fetch(FEED)).text()
 
-  type Entry = { day: number; title: string; url: string; start: number | null }
+  type Entry = {
+    day: number
+    title: string
+    url: string
+    start: number | null
+    end: number | null
+  }
   const chapters: Record<string, Entry[]> = {}
 
   for (const item of feed.split("<item>").slice(1)) {
@@ -104,19 +126,36 @@ const main = async () => {
     if (!readings.length) continue
 
     const url = /<enclosure url="([^"]+)"/.exec(item)?.[1] ?? ""
-    const starts = findChapterStarts(
-      await transcribe(field(item, "guid"), url),
-      readings,
-      books,
-    )
-    readings.forEach(({ bookId, chapter }, i) => {
-      if (starts[i] === undefined) {
+    const segments = await transcribe(field(item, "guid"), url)
+    const starts = findChapterStarts(segments, readings, books)
+    for (const [i, { bookId, chapter }] of readings.entries()) {
+      const start = starts[i]
+      if (start === undefined) {
         console.warn(`Dia ${day}: no heading for ${bookId} ${chapter}`)
+      }
+      const nextStart = starts.slice(i + 1).find((s) => s !== undefined)
+      const end =
+        start === undefined
+          ? undefined
+          : findChapterEnd(
+              segments,
+              start,
+              nextStart,
+              await lastVerse(bookId, chapter),
+            )
+      if (start !== undefined && end === undefined) {
+        console.warn(`Dia ${day}: no end for ${bookId} ${chapter}`)
       }
       const key = `${bookId}/${chapter}`
       chapters[key] ??= []
-      chapters[key].push({ day, title, url, start: starts[i] ?? null })
-    })
+      chapters[key].push({
+        day,
+        title,
+        url,
+        start: start ?? null,
+        end: end ?? null,
+      })
+    }
     console.log(`Dia ${day}: ${readings.length} chapters`)
   }
 

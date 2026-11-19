@@ -9,6 +9,9 @@ export type AudioEpisode = {
   // Seconds into the episode where the chapter's reading starts; null when
   // its spoken heading was not found, and the episode plays from the start.
   start: number | null
+  // Where it ends: the last verse's closing words, or the next chapter's
+  // start; null when neither was found.
+  end: number | null
 }
 export type AudioIndex = Record<string, AudioEpisode[]>
 

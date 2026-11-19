@@ -4,7 +4,8 @@
 
 export type BookName = { id: string; shortName: string; chapterCount: number }
 export type Reading = { bookId: string; chapter: number }
-export type Segment = { start: number; text: string }
+/** A stretch of the transcript; `end` is known for Whisper's own segments. */
+export type Segment = { start: number; end?: number; text: string }
 
 export const normalize = (text: string): string =>
   text
@@ -123,4 +124,43 @@ export const findChapterStarts = (
     }
     return undefined
   })
+}
+
+/**
+ * Where a chapter's reading ends: the last transcript segment, after its
+ * start and before the next chapter's, that says the closing words of its
+ * last verse. Failing that (Whisper wrote a number as digits, say), the next
+ * chapter's start; a last reading with neither stays unknown.
+ */
+export const findChapterEnd = (
+  segments: Segment[],
+  start: number,
+  nextStart: number | undefined,
+  lastVerse: string,
+): number | undefined => {
+  const words = normalize(lastVerse).split(" ").filter(Boolean)
+  const within = segments.filter(
+    (s) => s.start >= start && (nextStart === undefined || s.start < nextStart),
+  )
+  // Joined, as the closing words can straddle two segments ("… o Senhor" |
+  // "Aleluia"); each segment's place in the join finds who said the last word.
+  let joined = ""
+  const at = within.map((segment) => {
+    const offset = joined.length
+    joined += ` ${normalize(segment.text)}`
+    return offset
+  })
+  joined += " "
+  for (const size of [3, 2]) {
+    if (words.length < size) continue
+    const found = joined.lastIndexOf(` ${words.slice(-size).join(" ")} `)
+    if (found < 0) continue
+    const lastWord = found + words.slice(-size).join(" ").length
+    // Offsets ascend, so the ones up to the last word end at its segment.
+    const index = at.filter((offset) => offset <= lastWord).length - 1
+    const segment = within[index]
+    const next = segments[segments.indexOf(segment) + 1]
+    return segment.end ?? next?.start ?? segment.start
+  }
+  return nextStart
 }

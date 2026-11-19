@@ -1,6 +1,11 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import { type BookName, findChapterStarts, parseReadings } from "./mais365"
+import {
+  type BookName,
+  findChapterEnd,
+  findChapterStarts,
+  parseReadings,
+} from "./mais365"
 
 const books: BookName[] = [
   { id: "gen", shortName: "Génesis", chapterCount: 50 },
@@ -145,6 +150,67 @@ describe("findChapterStarts", () => {
     assert.deepEqual(
       findChapterStarts(spoken, wanted, withChronicles),
       [1, 2, 3],
+    )
+  })
+})
+
+describe("findChapterEnd", () => {
+  const segments = [
+    { start: 56.5, end: 63.8, text: " Génesis 5" },
+    { start: 63.8, end: 270, text: " Este é o livro da descendência de Adão" },
+    { start: 270, end: 278.4, text: " Noé gerou Sem, Cam e Jafet." },
+    { start: 280.8, end: 290, text: " Génesis 6" },
+    {
+      start: 480,
+      end: 489.9,
+      text: " Noé encontrou graça aos olhos do Senhor.",
+    },
+    { start: 492.1, end: 500, text: " Salmo 136." },
+  ]
+
+  it("ends where the last verse's closing words are said", () => {
+    assert.equal(
+      findChapterEnd(segments, 56.5, 280.8, "e gerou Sem, Cam e Jafet."),
+      278.4,
+    )
+  })
+
+  it("looks only before the next chapter's start", () => {
+    assert.equal(findChapterEnd(segments, 280.8, 492.1, "Cam e Jafet"), 492.1)
+  })
+
+  it("falls back to the next chapter's start, or nothing for the last one", () => {
+    assert.equal(
+      findChapterEnd(segments, 56.5, 280.8, "quinhentos anos"),
+      280.8,
+    )
+    assert.equal(
+      findChapterEnd(segments, 492.1, undefined, "o seu amor é eterno"),
+      undefined,
+    )
+  })
+
+  it("finds closing words split across two segments", () => {
+    const split = [
+      { start: 776.6, end: 779, text: " Bem diz ó minha alma o Senhor" },
+      { start: 779, end: 780.5, text: " Aleluia" },
+      { start: 780.5, end: 800, text: " Eu sou o Padre Miguel" },
+    ]
+    assert.equal(
+      findChapterEnd(
+        split,
+        700,
+        undefined,
+        "Bendiz, ó minha alma, o Senhor! Aleluia!",
+      ),
+      780.5,
+    )
+  })
+
+  it("matches two closing words when three are not said alike", () => {
+    assert.equal(
+      findChapterEnd(segments, 280.8, 492.1, "achou graça ao olhar do Senhor"),
+      489.9,
     )
   })
 })

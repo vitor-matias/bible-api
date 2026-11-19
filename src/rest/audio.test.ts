@@ -8,6 +8,7 @@ const episode = {
   title: "Dia 3 - A Arca de Noé",
   url: "https://x/3.m4a",
   start: 56.5,
+  end: 280.8,
 }
 const controller = makeAudioController({ "gen/5": [episode] })
 
