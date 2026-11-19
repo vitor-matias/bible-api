@@ -5,6 +5,7 @@ import { fullBookRateLimit, searchRateLimit } from "../middleware/rateLimiter"
 import { validateBooksParams } from "../middleware/validateBooksParams"
 import { validateQueryParams } from "../middleware/validateQueryParams"
 import { validateSearchParams } from "../middleware/validateSearchParams"
+import { loadAudioIndex, makeAudioController } from "./audio"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
@@ -55,6 +56,15 @@ export default (app: express.Express): void => {
     }
     return client
   }
+
+  // An in-memory lookup, so it is registered ahead of the Redis middleware
+  // (and of the verse route, whose shape would otherwise swallow it): it
+  // keeps answering while Redis is down, and needs no cache.
+  app.get(
+    "/v1/audio/:book/:chapter",
+    validateQueryParams([]),
+    makeAudioController(loadAudioIndex()),
+  )
 
   app.use(async (_req, res, next) => {
     try {
