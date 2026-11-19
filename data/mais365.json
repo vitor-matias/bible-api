@@ -1,232 +1,60 @@
 {
  "source": "https://anchor.fm/s/fbcf8b30/podcast/rss",
  "chapters": {
-  "luk/22": [
+  "gen/10": [
    {
-    "day": 320,
-    "title": "Dia 320 - A negação de Pedro anunciada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/129347809/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-10-12%2F436608753-44100-2-cbd0a669b47b4.m4a",
-    "start": 635.32
-   },
-   {
-    "day": 321,
-    "title": "Dia 321 - A oração de Jesus no jardim",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/129347820/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-10-19%2F437134060-44100-2-4456bdf8f86db.m4a",
-    "start": 48.22
+    "day": 5,
+    "title": "Dia 5 - Torre de Babel",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113378170/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-3%2F415393707-44100-2-3262b3a6ee987.m4a",
+    "start": 57.16
    }
   ],
-  "luk/23": [
+  "gen/11": [
    {
-    "day": 321,
-    "title": "Dia 321 - A oração de Jesus no jardim",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/129347820/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-10-19%2F437134060-44100-2-4456bdf8f86db.m4a",
-    "start": 282.62
+    "day": 5,
+    "title": "Dia 5 - Torre de Babel",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113378170/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-3%2F415393707-44100-2-3262b3a6ee987.m4a",
+    "start": 279.76
    }
   ],
-  "luk/24": [
+  "psa/2": [
    {
-    "day": 321,
-    "title": "Dia 321 - A oração de Jesus no jardim",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/129347820/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-10-19%2F437134060-44100-2-4456bdf8f86db.m4a",
-    "start": 674.3
+    "day": 5,
+    "title": "Dia 5 - Torre de Babel",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113378170/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-3%2F415393707-44100-2-3262b3a6ee987.m4a",
+    "start": 514.32
    }
   ],
-  "pro/26": [
+  "gen/7": [
    {
-    "day": 320,
-    "title": "Dia 320 - A negação de Pedro anunciada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/129347809/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-10-12%2F436608753-44100-2-cbd0a669b47b4.m4a",
-    "start": 913.74
-   },
-   {
-    "day": 321,
-    "title": "Dia 321 - A oração de Jesus no jardim",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/129347820/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-10-19%2F437134060-44100-2-4456bdf8f86db.m4a",
-    "start": 1018.76
+    "day": 4,
+    "title": "Dia 4 - O Dilúvio",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113378087/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-1%2F415333648-44100-2-f2e588e84d3c6.m4a",
+    "start": 57.6
    }
   ],
-  "luk/20": [
+  "gen/8": [
    {
-    "day": 320,
-    "title": "Dia 320 - A negação de Pedro anunciada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/129347809/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-10-12%2F436608753-44100-2-cbd0a669b47b4.m4a",
-    "start": 45.74
+    "day": 4,
+    "title": "Dia 4 - O Dilúvio",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113378087/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-1%2F415333648-44100-2-f2e588e84d3c6.m4a",
+    "start": 269.96
    }
   ],
-  "luk/21": [
+  "gen/9": [
    {
-    "day": 320,
-    "title": "Dia 320 - A negação de Pedro anunciada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/129347809/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-10-12%2F436608753-44100-2-cbd0a669b47b4.m4a",
-    "start": 378.22
+    "day": 4,
+    "title": "Dia 4 - O Dilúvio",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113378087/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-1%2F415333648-44100-2-f2e588e84d3c6.m4a",
+    "start": 467.06
    }
   ],
-  "neh/10": [
+  "psa/1": [
    {
-    "day": 278,
-    "title": "Dia 278 - Poder na fraqueza",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/126488388/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-9-5%2F433419897-44100-2-ca4e658362262.m4a",
-    "start": 46.28
-   }
-  ],
-  "est/5": [
-   {
-    "day": 278,
-    "title": "Dia 278 - Poder na fraqueza",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/126488388/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-9-5%2F433419897-44100-2-ca4e658362262.m4a",
-    "start": null
-   }
-  ],
-  "est/6": [
-   {
-    "day": 278,
-    "title": "Dia 278 - Poder na fraqueza",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/126488388/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-9-5%2F433419897-44100-2-ca4e658362262.m4a",
-    "start": 566.3
-   }
-  ],
-  "est/7": [
-   {
-    "day": 278,
-    "title": "Dia 278 - Poder na fraqueza",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/126488388/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-9-5%2F433419897-44100-2-ca4e658362262.m4a",
-    "start": 715.4
-   }
-  ],
-  "pro/21": [
-   {
-    "day": 278,
-    "title": "Dia 278 - Poder na fraqueza",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/126488388/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-9-5%2F433419897-44100-2-ca4e658362262.m4a",
-    "start": 840.32
-   }
-  ],
-  "jer/52": [
-   {
-    "day": 257,
-    "title": "Dia 257 - Escolhe amar",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/125709425/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-8-14%2F431854597-44100-2-ff3dd87d6f767.m4a",
-    "start": 49.7
-   }
-  ],
-  "oba/1": [
-   {
-    "day": 257,
-    "title": "Dia 257 - Escolhe amar",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/125709425/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-8-14%2F431854597-44100-2-ff3dd87d6f767.m4a",
-    "start": 377.28
-   }
-  ],
-  "pro/18": [
-   {
-    "day": 257,
-    "title": "Dia 257 - Escolhe amar",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/125709425/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-8-14%2F431854597-44100-2-ff3dd87d6f767.m4a",
-    "start": 769.18
-   }
-  ],
-  "2ki/25": [
-   {
-    "day": 191,
-    "title": "Dia 191- O exílio Babilônico",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/122628417/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-6-10%2F427700038-44100-2-d2026a535d6ac.m4a",
-    "start": 52.94
-   }
-  ],
-  "2ch/36": [
-   {
-    "day": 191,
-    "title": "Dia 191- O exílio Babilônico",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/122628417/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-6-10%2F427700038-44100-2-d2026a535d6ac.m4a",
-    "start": 370.12
-   }
-  ],
-  "pro/9": [
-   {
-    "day": 191,
-    "title": "Dia 191- O exílio Babilônico",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/122628417/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-6-10%2F427700038-44100-2-d2026a535d6ac.m4a",
-    "start": 645.3
-   }
-  ],
-  "1ki/15": [
-   {
-    "day": 165,
-    "title": "Dia 165 - O amante e a amada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/121043325/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-5-5%2F425560209-44100-2-9e54c49b42722.m4a",
-    "start": 54.5
-   }
-  ],
-  "1ki/16": [
-   {
-    "day": 165,
-    "title": "Dia 165 - O amante e a amada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/121043325/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-5-5%2F425560209-44100-2-9e54c49b42722.m4a",
-    "start": 367.7
-   }
-  ],
-  "2ch/16": [
-   {
-    "day": 165,
-    "title": "Dia 165 - O amante e a amada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/121043325/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-5-5%2F425560209-44100-2-9e54c49b42722.m4a",
-    "start": 715.94
-   }
-  ],
-  "2ch/17": [
-   {
-    "day": 165,
-    "title": "Dia 165 - O amante e a amada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/121043325/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-5-5%2F425560209-44100-2-9e54c49b42722.m4a",
-    "start": null
-   }
-  ],
-  "sng/4": [
-   {
-    "day": 165,
-    "title": "Dia 165 - O amante e a amada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/121043325/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-5-5%2F425560209-44100-2-9e54c49b42722.m4a",
-    "start": 1038.4
-   }
-  ],
-  "mrk/13": [
-   {
-    "day": 160,
-    "title": "Dia 160 - Jesus adverte o povo​",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/121042829/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-5-5%2F425559578-44100-2-efd938a759cbf.m4a",
-    "start": 50.12
-   }
-  ],
-  "psa/68": [
-   {
-    "day": 160,
-    "title": "Dia 160 - Jesus adverte o povo​",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/121042829/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-5-5%2F425559578-44100-2-efd938a759cbf.m4a",
-    "start": 883.48
-   }
-  ],
-  "1sa/21": [
-   {
-    "day": 113,
-    "title": "Dia 113 - Confiança quebrada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/118788105/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-3-21%2F422511612-44100-2-33e4525bdb6b5.m4a",
-    "start": 52.1
-   }
-  ],
-  "1sa/22": [
-   {
-    "day": 113,
-    "title": "Dia 113 - Confiança quebrada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/118788105/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-3-21%2F422511612-44100-2-33e4525bdb6b5.m4a",
-    "start": 217.96
-   }
-  ],
-  "psa/52": [
-   {
-    "day": 113,
-    "title": "Dia 113 - Confiança quebrada",
-    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/118788105/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-3-21%2F422511612-44100-2-33e4525bdb6b5.m4a",
-    "start": 473.1
+    "day": 4,
+    "title": "Dia 4 - O Dilúvio",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113378087/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-1%2F415333648-44100-2-f2e588e84d3c6.m4a",
+    "start": 702.12
    }
   ],
   "gen/5": [
@@ -251,6 +79,30 @@
     "title": "Dia 3 - A Arca de Noé",
     "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113378014/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-1%2F415333538-44100-2-64465ddc251a1.m4a",
     "start": 492.1
+   }
+  ],
+  "gen/3": [
+   {
+    "day": 2,
+    "title": "Dia 2 - A queda",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113377598/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-1%2F415332929-44100-2-541ccf615c6ae.m4a",
+    "start": 56.8
+   }
+  ],
+  "gen/4": [
+   {
+    "day": 2,
+    "title": "Dia 2 - A queda",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113377598/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-1%2F415332929-44100-2-541ccf615c6ae.m4a",
+    "start": 309.18
+   }
+  ],
+  "psa/104": [
+   {
+    "day": 2,
+    "title": "Dia 2 - A queda",
+    "url": "https://anchor.fm/s/fbcf8b30/podcast/play/113377598/https%3A%2F%2Fd3ctxlq1ktw2nl.cloudfront.net%2Fstaging%2F2026-0-1%2F415332929-44100-2-541ccf615c6ae.m4a",
+    "start": 556.34
    }
   ],
   "gen/1": [
