@@ -18,6 +18,9 @@ const API = process.env.API_ORIGIN ?? "https://biblia.capuchinhos.org"
 const MODEL =
   process.env.WHISPER_MODEL ??
   path.join(os.homedir(), ".cache/whisper/ggml-large-v3-turbo-q5_0.bin")
+// Absolute paths, not a PATH lookup (Homebrew's on Apple silicon by default).
+const FFMPEG = process.env.FFMPEG ?? "/opt/homebrew/bin/ffmpeg"
+const WHISPER = process.env.WHISPER_CLI ?? "/opt/homebrew/bin/whisper-cli"
 const CACHE = path.resolve(".cache/mais365")
 const OUT = path.resolve("data/mais365.json")
 
@@ -40,7 +43,7 @@ const transcribe = async (guid: string, url: string): Promise<Segment[]> => {
     const response = await fetch(url)
     if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`)
     fs.writeFileSync(audio, Buffer.from(await response.arrayBuffer()))
-    execFileSync("ffmpeg", [
+    execFileSync(FFMPEG, [
       "-v",
       "error",
       "-y",
@@ -53,7 +56,7 @@ const transcribe = async (guid: string, url: string): Promise<Segment[]> => {
       wav,
     ])
     execFileSync(
-      "whisper-cli",
+      WHISPER,
       [
         "-m",
         MODEL,

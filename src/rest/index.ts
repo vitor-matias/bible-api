@@ -57,6 +57,15 @@ export default (app: express.Express): void => {
     return client
   }
 
+  // An in-memory lookup, so it is registered ahead of the Redis middleware
+  // (and of the verse route, whose shape would otherwise swallow it): it
+  // keeps answering while Redis is down, and needs no cache.
+  app.get(
+    "/v1/audio/:book/:chapter",
+    validateQueryParams([]),
+    makeAudioController(loadAudioIndex()),
+  )
+
   app.use(async (_req, res, next) => {
     try {
       res.locals.client = await getClient()
@@ -75,14 +84,6 @@ export default (app: express.Express): void => {
   const validateSearchQueryParams = validateQueryParams(
     ["text", "page", "limit", "semantic"],
     ["semantic"],
-  )
-
-  // Before the verse route, whose shape would otherwise swallow it. Not
-  // cached: it is an in-memory lookup.
-  app.get(
-    "/v1/audio/:book/:chapter",
-    noQueryParams,
-    makeAudioController(loadAudioIndex()),
   )
 
   // Endpoint to get a specific verse
