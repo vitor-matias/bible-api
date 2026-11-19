@@ -12,6 +12,9 @@ export type AudioEpisode = {
   // Where it ends: the last verse's closing words, or the next chapter's
   // start; null when neither was found.
   end: number | null
+  // [verse, seconds into the episode] for each verse, where the reading lines
+  // up well enough with the text to follow it verse by verse.
+  verses?: [number, number][]
 }
 export type AudioIndex = Record<string, AudioEpisode[]>
 
