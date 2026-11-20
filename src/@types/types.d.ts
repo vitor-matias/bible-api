@@ -22,6 +22,8 @@ type USFMChapter = {
 
 type USFMVerse = {
   verseObjects: USFMVerseObject[]
+  // The printed verse number when it is not the key (an addition's "B1").
+  label?: string
 }
 
 type Footnote = {
