@@ -55,7 +55,7 @@ describe("splitGreekAdditions", () => {
     const one = split("1")
     assert.equal(one.front?.extra?.chapterLabel, "A")
     assert.equal(one["2"].extra?.chapterNumberStarts, true)
-    assert.equal(one["1"].extra, undefined)
+    assert.equal(one["1"].extra?.chapterNumberStarts, undefined)
     assert.equal(one["3"].extra, undefined)
   })
 
@@ -69,6 +69,29 @@ describe("splitGreekAdditions", () => {
   it("numbers B's verses and the text that resumes after it", () => {
     assert.deepEqual(labels(split("3")), ["1", "2", "1", "2", "14", "15"])
     assert.equal(split("3").front, undefined)
+  })
+
+  it("marks where a mid-chapter supplement's letter is printed", () => {
+    // B has a heading ahead of its first verse: the verse ending with it. C has none.
+    assert.equal(split("3")["2"].extra?.supplementLetter, "B")
+    assert.equal(split("4")["1"].extra, undefined)
+    assert.equal(split("4")["2"].extra?.supplementLetter, "C")
+  })
+
+  it("flags the supplement's verses, and only those", () => {
+    const flagged = (c: USFMChapter) =>
+      Object.keys(c)
+        .filter((k) => k !== "front")
+        .map((k) => c[k].extra?.supplement === true)
+    assert.deepEqual(flagged(split("1")), [true, true, false, false])
+    assert.deepEqual(flagged(split("3")), [
+      false,
+      false,
+      true,
+      true,
+      false,
+      false,
+    ])
   })
 
   it("keeps a heading ending an addition with that addition", () => {

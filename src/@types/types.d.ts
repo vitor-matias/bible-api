@@ -142,6 +142,11 @@ type Verse = {
   // Set on the last verse of such a supplement: the chapter number is printed
   // at the heading it ends with, where the numbered text starts.
   chapterNumberStarts?: boolean
+  // Set on the verse a supplement in mid-chapter ("C") opens at: the letter is
+  // printed at its closing heading, or its first line when it has none.
+  supplementLetter?: string
+  // Set on the verses of a supplement, which the printed edition sets in italics.
+  supplement?: boolean
   text: (_Text | Section | Paragraph | Quote | References | _Footnote)[]
   searchId: string
 }

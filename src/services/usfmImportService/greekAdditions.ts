@@ -50,10 +50,14 @@ export const splitGreekAdditions = (chapter: USFMChapter): USFMChapter => {
     // chapter number comes where the numbered text starts.
     front = { verseObjects: head, extra: { chapterLabel: opening } }
     for (const { va, objs } of added) {
-      verses.push({ label: va, verseObjects: objs })
+      verses.push({
+        label: va,
+        verseObjects: objs,
+        extra: { supplement: true },
+      })
     }
     const last = verses.at(-1)
-    if (last) last.extra = { chapterNumberStarts: true }
+    if (last) last.extra = { supplement: true, chapterNumberStarts: true }
   }
 
   for (const key of keys) {
@@ -64,13 +68,26 @@ export const splitGreekAdditions = (chapter: USFMChapter): USFMChapter => {
       continue
     }
     const { head, verses: added } = splitAtVa(objects.slice(cpIndex + 1))
+    const letter = { supplementLetter: cpLetter(objects) }
+    const hasHeading = head.some((o) => o.type === "section")
     verses.push({
       label: key,
       verseObjects: [...objects.slice(0, cpIndex), ...head],
+      ...(hasHeading && { extra: letter }),
     })
-    for (const { va, objs } of added) {
-      verses.push({ label: va, verseObjects: objs })
-    }
+    // The text that resumes after an addition (3:14, 3:15 after B) is numbered
+    // with \va too: a jump in the count marks where the addition ends.
+    let inAddition = true
+    added.forEach(({ va, objs }, i) => {
+      if (Number(va) !== i + 1) inAddition = false
+      verses.push({
+        label: va,
+        verseObjects: objs,
+        ...(inAddition && {
+          extra: { supplement: true, ...(!hasHeading && i === 0 && letter) },
+        }),
+      })
+    })
   }
 
   const result: USFMChapter = {}
