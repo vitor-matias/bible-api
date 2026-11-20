@@ -46,24 +46,35 @@ const sections = (objs: USFMVerseObject[]) =>
     .map((o) => (o.content ?? o.text ?? "").trim())
 
 describe("splitGreekAdditions", () => {
-  it("lays an opening addition out as lettered verses ahead of verse 1", () => {
-    assert.deepEqual(labels(split("1")), ["A1", "A2", "1", "2"])
+  it("lays an opening addition out as verses 1, 2, ... ahead of the chapter's own", () => {
+    assert.deepEqual(labels(split("1")), ["1", "2", "1", "2"])
+    assert.deepEqual(Object.keys(split("1")), ["1", "2", "3", "4", "front"])
   })
 
-  it("keeps the opening heading in front and moves the next onto verse 1", () => {
+  it("prints the opening addition under its letter, and the chapter number after it", () => {
+    const one = split("1")
+    assert.equal(one.front?.extra?.chapterLabel, "A")
+    assert.equal(one["2"].extra?.chapterNumberStarts, true)
+    assert.equal(one["1"].extra, undefined)
+    assert.equal(one["3"].extra, undefined)
+  })
+
+  it("keeps each heading at the end of the verse the source put it in", () => {
     const one = split("1")
     assert.deepEqual(sections(one.front?.verseObjects ?? []), ["Um sonho"])
-    assert.deepEqual(sections(one["3"].verseObjects), ["Banquete"])
+    assert.deepEqual(sections(one["2"].verseObjects), ["Banquete"])
+    assert.deepEqual(sections(one["3"].verseObjects), [])
   })
 
-  it("labels B's verses and numbers the text that resumes", () => {
-    assert.deepEqual(labels(split("3")), ["1", "2", "B1", "B2", "14", "15"])
+  it("numbers B's verses and the text that resumes after it", () => {
+    assert.deepEqual(labels(split("3")), ["1", "2", "1", "2", "14", "15"])
+    assert.equal(split("3").front, undefined)
   })
 
-  it("opens the verse after an addition with the heading that ended it", () => {
+  it("keeps a heading ending an addition with that addition", () => {
     const four = split("4")
-    assert.deepEqual(labels(four), ["1", "C1", "2"])
-    assert.deepEqual(sections(four["3"].verseObjects), ["Seguinte"])
+    assert.deepEqual(labels(four), ["1", "1", "2"])
+    assert.deepEqual(sections(four["2"].verseObjects), ["Seguinte"])
   })
 
   it("leaves a chapter without additions as it was", () => {

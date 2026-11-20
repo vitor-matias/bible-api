@@ -159,6 +159,7 @@ export const storeChapter = async (
         verseNumber,
         verseLabel,
         verse.verseObjects,
+        verse.extra,
       )
       collectForEmbedding(versesData, verseData, verseNumber)
       verseNumber++
@@ -171,6 +172,7 @@ export const storeChapter = async (
         0,
         verseLabel,
         verse.verseObjects,
+        verse.extra,
       )
     }
   }

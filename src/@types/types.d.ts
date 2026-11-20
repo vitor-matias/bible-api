@@ -24,6 +24,8 @@ type USFMVerse = {
   verseObjects: USFMVerseObject[]
   // The printed verse number when it is not the key (an addition's "B1").
   label?: string
+  // Fields the stored verse carries besides its text.
+  extra?: Partial<Verse>
 }
 
 type Footnote = {
@@ -134,6 +136,12 @@ type Verse = {
   chapterNumber: Chapter["number"]
   number: number
   numberLabel: string
+  // Set on verse 0 of a chapter that opens with a supplement ("A"): the
+  // chapter mark printed there instead of the chapter number.
+  chapterLabel?: string
+  // Set on the last verse of such a supplement: the chapter number is printed
+  // at the heading it ends with, where the numbered text starts.
+  chapterNumberStarts?: boolean
   text: (_Text | Section | Paragraph | Quote | References | _Footnote)[]
   searchId: string
 }
