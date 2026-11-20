@@ -166,6 +166,28 @@ describe("parseFootnote / storeVerse", () => {
     assert.deepEqual(parseFootnote(String.raw`+ \fr 1.1 \f*`), [])
   })
 
+  it("keeps the supplement mark on a stored heading, and the verse's extra fields", async () => {
+    const fake = createFakeRedis()
+    const verse = await storeVerse(
+      fake.client,
+      "est",
+      1,
+      1,
+      1,
+      "1",
+      [
+        { type: "section", tag: "s2", content: "Oração", supplement: true },
+        { type: "section", tag: "s2", content: "Outro" },
+      ],
+      { supplement: true },
+    )
+    assert.equal(verse.supplement, true)
+    assert.deepEqual(
+      verse.text.map((t) => t.type === "section" && t.supplement === true),
+      [true, false],
+    )
+  })
+
   it("stores each kind of verse object", async () => {
     const fake = createFakeRedis()
 
