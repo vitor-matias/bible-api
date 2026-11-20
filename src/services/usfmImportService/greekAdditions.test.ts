@@ -94,6 +94,20 @@ describe("splitGreekAdditions", () => {
     ])
   })
 
+  it("marks the headings inside a supplement, not the one ending it", () => {
+    const marked = (c: USFMChapter, key: string) =>
+      c[key].verseObjects
+        .filter((o) => o.type === "section")
+        .map((o) => [(o.content ?? "").trim(), o.supplement === true])
+    const one = split("1")
+    assert.deepEqual(marked(one, "front"), [["Um sonho", true]])
+    assert.deepEqual(marked(one, "2"), [["Banquete", false]])
+    const three = split("3")
+    assert.deepEqual(marked(three, "2"), [["Cópia", true]])
+    const four = split("4")
+    assert.deepEqual(marked(four, "2"), [["Seguinte", false]])
+  })
+
   it("keeps a heading ending an addition with that addition", () => {
     const four = split("4")
     assert.deepEqual(labels(four), ["1", "1", "2"])

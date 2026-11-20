@@ -148,6 +148,7 @@ export const storeVerse = async (
         tag: verseObject.tag ?? "s2",
         text,
         normalizedText: normalizeText(text),
+        ...(verseObject.supplement && { supplement: true }),
       })
 
       if (verseObject.type === "section") {

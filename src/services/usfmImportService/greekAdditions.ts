@@ -23,6 +23,26 @@ const splitAtVa = (objects: USFMVerseObject[]) => {
   return { head, verses }
 }
 
+// The headings inside a supplement, as copies. The ones ending it are the main
+// text's ("Banquete de Assuero" after A): they stay as they are.
+const markHeadings = (
+  objects: USFMVerseObject[],
+  { keepTrailing = false } = {},
+): USFMVerseObject[] => {
+  let end = objects.length
+  while (
+    keepTrailing &&
+    end > 0 &&
+    (objects[end - 1].type === "section" ||
+      objects[end - 1].type === "paragraph")
+  ) {
+    end--
+  }
+  return objects.map((o, i) =>
+    o.type === "section" && i < end ? { ...o, supplement: true } : o,
+  )
+}
+
 const cpLetter = (objects: USFMVerseObject[]) =>
   objects.find((o) => o.tag === "cp")?.content?.trim()
 
@@ -48,14 +68,19 @@ export const splitGreekAdditions = (chapter: USFMChapter): USFMChapter => {
     )
     // A supplement opening the chapter is printed under the letter, and the
     // chapter number comes where the numbered text starts.
-    front = { verseObjects: head, extra: { chapterLabel: opening } }
-    for (const { va, objs } of added) {
+    front = {
+      verseObjects: markHeadings(head),
+      extra: { chapterLabel: opening },
+    }
+    added.forEach(({ va, objs }, i) => {
       verses.push({
         label: va,
-        verseObjects: objs,
+        verseObjects: markHeadings(objs, {
+          keepTrailing: i === added.length - 1,
+        }),
         extra: { supplement: true },
       })
-    }
+    })
     const last = verses.at(-1)
     if (last) last.extra = { supplement: true, chapterNumberStarts: true }
   }
@@ -72,17 +97,22 @@ export const splitGreekAdditions = (chapter: USFMChapter): USFMChapter => {
     const hasHeading = head.some((o) => o.type === "section")
     verses.push({
       label: key,
-      verseObjects: [...objects.slice(0, cpIndex), ...head],
+      verseObjects: [...objects.slice(0, cpIndex), ...markHeadings(head)],
       ...(hasHeading && { extra: letter }),
     })
     // The text that resumes after an addition (3:14, 3:15 after B) is numbered
     // with \va too: a jump in the count marks where the addition ends.
     let inAddition = true
+    const lastInAddition =
+      added.findIndex(({ va }, i) => Number(va) !== i + 1) - 1
     added.forEach(({ va, objs }, i) => {
       if (Number(va) !== i + 1) inAddition = false
+      const end = lastInAddition < 0 ? added.length - 1 : lastInAddition
       verses.push({
         label: va,
-        verseObjects: objs,
+        verseObjects: inAddition
+          ? markHeadings(objs, { keepTrailing: i === end })
+          : objs,
         ...(inAddition && {
           extra: { supplement: true, ...(!hasHeading && i === 0 && letter) },
         }),

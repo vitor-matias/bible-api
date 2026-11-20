@@ -47,6 +47,8 @@ type USFMVerseObject = {
   endTag?: string
   text?: string
   nextChar?: string
+  // On a heading inside a Greek supplement (see greekAdditions.ts).
+  supplement?: boolean
 }
 
 type Book = {
@@ -156,6 +158,9 @@ type Section = {
   tag: string
   text: string
   normalizedText: string
+  // A heading inside a Greek supplement: the printed edition sets it black,
+  // bold and italic, where the main text's headings are red.
+  supplement?: boolean
 }
 
 type _Text = {
