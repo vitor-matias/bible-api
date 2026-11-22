@@ -3,6 +3,7 @@ import type { TaskPool } from "../../util/concurrency"
 import { getBookHeader } from "../book/getBookHeader"
 import { getBookId } from "../book/getBookId"
 import { extractBookIntro } from "./bookIntroUtils"
+import { splitGreekAdditions } from "./greekAdditions"
 import { storeChapter } from "./storeChapter"
 import {
   introSlugFromFileName,
@@ -53,7 +54,14 @@ export const storeBook = async (
     // Sequential on purpose: a chapter's heading can carry over to the next
     // chapter's title, so chapters are stored in order. Their embedding calls
     // already run concurrently in the pool.
-    await storeChapter(client, bookId, bookCount, number, chapter, embeddings) // NOSONAR
+    await storeChapter(
+      client,
+      bookId,
+      bookCount,
+      number,
+      splitGreekAdditions(chapter),
+      embeddings,
+    ) // NOSONAR
   }
 }
 

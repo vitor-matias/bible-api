@@ -92,6 +92,7 @@ export const storeVerse = async (
   verseNumber: number,
   verseLabel: string,
   verseObjects: USFMVerseObject[],
+  extra: Partial<Verse> = {},
 ): Promise<Verse> => {
   const searchId = `${String(bookNumber).padStart(2, "0")}-${String(chapterNumber).padStart(3, "0")}-${String(verseNumber).padStart(3, "0")}`
   const verseData: Verse = (await getVerse(
@@ -106,6 +107,7 @@ export const storeVerse = async (
     number: verseNumber,
     text: [],
     numberLabel: verseLabel,
+    ...extra,
   }
 
   for (const verseObject of verseObjects) {
@@ -146,6 +148,7 @@ export const storeVerse = async (
         tag: verseObject.tag ?? "s2",
         text,
         normalizedText: normalizeText(text),
+        ...(verseObject.supplement && { supplement: true }),
       })
 
       if (verseObject.type === "section") {
