@@ -1,4 +1,5 @@
 import type { createClient } from "redis"
+import { getJson, setJson } from "../../util/jsonStore"
 import type { DocumentChunk } from "../voyage/embeddings"
 import type { VerseForEmbedding } from "./storeChapter"
 
@@ -43,9 +44,7 @@ const getChapterOutline = async (
   bookId: string,
   chapterNumber: number,
 ): Promise<ChapterOutline | null> =>
-  (await client.json.get(
-    chapterOutlineKey(bookId, chapterNumber),
-  )) as ChapterOutline | null
+  getJson<ChapterOutline>(client, chapterOutlineKey(bookId, chapterNumber))
 
 // Records the outline at the start and end of a chapter from all of its
 // stored verses, verse 0 included: headings that open a chapter sit there.
@@ -67,7 +66,7 @@ export const saveChapterOutline = async (
     start,
     verses.filter((v) => v.number > 0),
   )
-  await client.json.set(chapterOutlineKey(bookId, chapterNumber), "$", {
+  await setJson(client, chapterOutlineKey(bookId, chapterNumber), {
     start,
     end,
   })
@@ -91,11 +90,11 @@ export const chapterDocument = async (
   versesData: VerseForEmbedding[],
 ): Promise<DocumentChunk[]> => {
   const { bookId, chapterNumber } = versesData[0].verseData
-  const [name, outline] = await Promise.all([
-    client.json.get(`book:${bookId}`, { path: "$.name" }),
+  const [book, outline] = await Promise.all([
+    getJson<Pick<Book, "name">>(client, `book:${bookId}`),
     getChapterOutline(client, bookId, chapterNumber),
   ])
-  const bookName = (name as string[] | null)?.[0] ?? ""
+  const bookName = book?.name ?? ""
   const chapter =
     bookId === "psa" ? `Salmo ${chapterNumber}` : `capítulo ${chapterNumber}`
   const place = [bookName, chapter].filter(Boolean).join(", ")

@@ -1,6 +1,6 @@
 import type { createClient } from "redis"
 import { NotFoundError } from "../../util/errors"
-import { jsonMGet } from "../../util/jsonMGet"
+import { mGetJson } from "../../util/jsonStore"
 import { verseKey } from "../verse/getVerse"
 import { getBookChapterTitle } from "./getBookChapterTitle"
 import { chapterVerseMaxKey, MAX_CHAPTER_VERSES } from "./verseCountKey"
@@ -40,16 +40,16 @@ export const getChapter = async (
   }
 
   // Verses are numbered from 0 (the "front" pseudo-verse) up to the recorded
-  // maximum; jsonMGet returns null for any gap, which is filtered out below.
+  // maximum; mGet returns null for any gap, which is filtered out below.
   const versesToFetch: string[] = []
   for (let number = 0; number <= highestVerse; number++) {
     versesToFetch.push(verseKey(bookId, chapterNumber, number))
   }
 
   // One round trip for the whole chapter, issued alongside the title lookup
-  // rather than before it.
+  // rather than before it. Missing keys come back as null.
   const [versesData, title] = await Promise.all([
-    jsonMGet<Verse>(client, versesToFetch),
+    mGetJson<Verse>(client, versesToFetch),
     knownTitle !== undefined
       ? Promise.resolve(knownTitle)
       : getBookChapterTitle(client, bookId, chapterNumber).then(
