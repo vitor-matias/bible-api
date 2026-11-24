@@ -38,6 +38,33 @@ describe("parseReadings", () => {
     ])
   })
 
+  it("keeps the verses of a chapter read only in part", () => {
+    assert.deepEqual(
+      read("Génesis 12–13; Provérbios 1:1-7; Salmo 119:57–120.").readings,
+      [
+        { bookId: "gen", chapter: 12 },
+        { bookId: "gen", chapter: 13 },
+        { bookId: "pro", chapter: 1, verses: [1, 7] },
+        { bookId: "psa", chapter: 119, verses: [57, 120] },
+      ],
+    )
+    // Across chapters, each is read whole as far as this goes.
+    assert.deepEqual(read("Lucas 22:39–24:50.").readings[0], {
+      bookId: "luk",
+      chapter: 22,
+    })
+  })
+
+  it("reads the readings after «lemos» too", () => {
+    const lemos = (text: string) =>
+      parseReadings(`<p>Hoje ${text}</p><p>O P. Bernardo…</p>`, books).readings
+    assert.equal(lemos("lemos: Génesis 3; Salmo 45.").length, 2)
+    assert.equal(
+      lemos("dentro do tempo bíblico lemos: Génesis 10-11; Salmo 50.").length,
+      3,
+    )
+  })
+
   it("carries the book over a bare chapter and joins with 'e'", () => {
     assert.deepEqual(chapters("Génesis 1 e 2 e o Salmo 19."), [
       "gen 1",
@@ -119,6 +146,35 @@ describe("findChapterStarts", () => {
     assert.deepEqual(
       findChapterStarts(segments, readings, books),
       [56.5, 280.8, 492.1],
+    )
+  })
+
+  it("starts an unannounced first reading after the day's announcement", () => {
+    // Dia 6: "…vamos ouvir Génesis 12 e 13," | "Jó 1 e 2 e Provérbios 1, 1 a 7."
+    // then Génesis 12 read straight away; Jó and Provérbios headed, the
+    // latter cut by Whisper to its verses.
+    const day6 = [
+      { start: 42.3, text: " Hoje é o dia 6 e vamos ouvir Génesis 12 e 13," },
+      { start: 50.1, text: " Jó 1 e 2 e Provérbios 1, 1 a 7." },
+      { start: 58.3, text: " O Senhor disse a Abrão, deixa a tua terra" },
+      { start: 254.4, text: " Génesis 13" },
+      { start: 380, text: " Jó I" },
+      { start: 632.3, text: " Jó 2" },
+      { start: 770.8, text: " 1 a 7" },
+    ]
+    assert.deepEqual(
+      findChapterStarts(
+        day6,
+        [
+          { bookId: "gen", chapter: 12 },
+          { bookId: "gen", chapter: 13 },
+          { bookId: "job", chapter: 1 },
+          { bookId: "job", chapter: 2 },
+          { bookId: "pro", chapter: 1, verses: [1, 7] },
+        ],
+        books,
+      ),
+      [58.3, 254.4, 380, 632.3, 770.8],
     )
   })
 

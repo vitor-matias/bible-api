@@ -3,7 +3,12 @@
 // Episodes are only streamed from the podcast's own host, never stored here.
 
 export type BookName = { id: string; shortName: string; chapterCount: number }
-export type Reading = { bookId: string; chapter: number }
+/** A chapter read, or only `verses` [first, last] of it (Provérbios 1:1-7). */
+export type Reading = {
+  bookId: string
+  chapter: number
+  verses?: [number, number]
+}
 /** A stretch of the transcript; `end` is known for Whisper's own segments. */
 export type Segment = { start: number; end?: number; text: string }
 
@@ -18,6 +23,7 @@ export const normalize = (text: string): string =>
 // How the descriptions and the readers name a book besides its short name.
 const ALIASES: Record<string, string[]> = {
   psa: ["salmo"],
+  job: ["jo"],
   act: ["atos"],
   oba: ["obadias"],
   est: ["esther"],
@@ -33,6 +39,27 @@ const asShortName = (said: string): string =>
     )
     .replace(/^(\d )?(?:o )?livro d[aeo]s? /, "$1")
 
+// Whisper now and then writes a heading's number as a numeral: "Jó I".
+const ROMAN = [
+  "i",
+  "ii",
+  "iii",
+  "iv",
+  "v",
+  "vi",
+  "vii",
+  "viii",
+  "ix",
+  "x",
+  "xi",
+  "xii",
+]
+const arabicTail = (said: string): string =>
+  said.replace(/ ([ivx]+)$/, (whole, numeral: string) => {
+    const value = ROMAN.indexOf(numeral) + 1
+    return value ? ` ${value}` : whole
+  })
+
 const namesOf = (book: BookName) => [
   normalize(book.shortName),
   ...(ALIASES[book.id] ?? []),
@@ -44,20 +71,26 @@ const findBook = (name: string, books: BookName[]) => {
 }
 
 // "5", "10–11", "26:27-28", "22:39–24:50", "20–22:38": the chapters read.
-const chaptersOf = (numbers: string, book: BookName): number[] => {
+const readingsOf = (numbers: string, book: BookName): Reading[] => {
   const match = /^(\d+)(?::(\d+))?(?:\s*[–-]\s*(\d+)(?::(\d+))?)?/.exec(numbers)
-  if (!match) return book.chapterCount === 1 ? [1] : []
+  if (!match)
+    return book.chapterCount === 1 ? [{ bookId: book.id, chapter: 1 }] : []
   const first = Number(match[1])
   // A second number is a verse when the first had one and it has none.
-  const last =
+  const inOne =
     match[3] === undefined || (match[2] !== undefined && match[4] === undefined)
-      ? first
-      : Number(match[3])
-  const chapters: number[] = []
-  for (let c = first; c <= Math.min(last, book.chapterCount); c++) {
-    chapters.push(c)
+  if (inOne && match[2] !== undefined) {
+    // "1:1-7" (or "3:5"): part of one chapter, those verses.
+    const from = Number(match[2])
+    const to = match[3] === undefined ? from : Number(match[3])
+    return [{ bookId: book.id, chapter: first, verses: [from, to] }]
   }
-  return chapters
+  const last = inOne ? first : Number(match[3])
+  const readings: Reading[] = []
+  for (let c = first; c <= Math.min(last, book.chapterCount); c++) {
+    readings.push({ bookId: book.id, chapter: c })
+  }
+  return readings
 }
 
 /** Up to the first full stop that ends a sentence, not a "3.5" in a number. */
@@ -81,7 +114,8 @@ export const parseReadings = (
   // Tags out, whitespace in one run: what follows reads plain text. Each
   // pattern here is linear, so a hostile description can't stall the parse.
   const text = description.replace(/<[^<>]*>/g, " ").replace(/\s+/g, " ")
-  const after = /vamos (?:ler|ouvir)/.exec(text)
+  // "Hoje vamos ler …", or "Hoje lemos: …" (as from Dia 28).
+  const after = /vamos (?:ler|ouvir)|\blemos\b/.exec(text)
   const announced =
     after &&
     untilSentenceEnd(
@@ -104,13 +138,13 @@ export const parseReadings = (
     const namedBook = findBook(part.slice(0, split).trim(), books)
     if (namedBook) book = namedBook
     const numbers = namedBook ? part.slice(split) : part
-    const chapters =
-      book && /^\d|^$/.test(numbers) ? chaptersOf(numbers, book) : []
-    if (!book || chapters.length === 0) {
+    const found =
+      book && /^\d|^$/.test(numbers) ? readingsOf(numbers, book) : []
+    if (!book || found.length === 0) {
       unparsed.push(part)
       continue
     }
-    for (const chapter of chapters) readings.push({ bookId: book.id, chapter })
+    readings.push(...found)
   }
   return { readings, unparsed }
 }
@@ -128,19 +162,40 @@ export const findChapterStarts = (
   books: BookName[],
 ): (number | undefined)[] => {
   let cursor = 0
-  return readings.map(({ bookId, chapter }) => {
+  const starts = readings.map(({ bookId, chapter, verses }) => {
     const book = books.find((b) => b.id === bookId)
     if (!book) return undefined
     const headings = namesOf(book).map((name) => `${name} ${chapter}`)
+    // Read in part, its verses alone can be all Whisper keeps of the heading
+    // ("Provérbios 1, 1 a 7" heard as "1 a 7").
+    const range = verses && `${verses[0]} a ${verses[1]}`
     for (let i = cursor; i < segments.length; i++) {
-      const said = asShortName(normalize(segments[i].text))
-      if (headings.some((h) => said === h || said.startsWith(`${h} `))) {
+      const said = arabicTail(asShortName(normalize(segments[i].text)))
+      if (
+        headings.some((h) => said === h || said.startsWith(`${h} `)) ||
+        said === range
+      ) {
         cursor = i + 1
         return segments[i].start
       }
     }
     return undefined
   })
+  // The first chapter is often read without its heading, straight after the
+  // sentence that announces the day's readings.
+  if (starts[0] === undefined) {
+    const announced = segments.findIndex((s) =>
+      /vamos (?:ler|ouvir)|\blemos\b/.test(normalize(s.text)),
+    )
+    const closes = segments.findIndex(
+      (s, i) => i >= announced && s.text.trim().endsWith("."),
+    )
+    const first = announced < 0 || closes < 0 ? undefined : segments[closes + 1]
+    const next = starts.find((s) => s !== undefined)
+    if (first && (next === undefined || first.start < next))
+      starts[0] = first.start
+  }
+  return starts
 }
 
 /**

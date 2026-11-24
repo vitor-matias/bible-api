@@ -5,7 +5,13 @@ import { fullBookRateLimit, searchRateLimit } from "../middleware/rateLimiter"
 import { validateBooksParams } from "../middleware/validateBooksParams"
 import { validateQueryParams } from "../middleware/validateQueryParams"
 import { validateSearchParams } from "../middleware/validateSearchParams"
-import { loadAudioIndex, makeAudioController } from "./audio"
+import {
+  loadAudioIndex,
+  loadPlan,
+  makeAudioController,
+  makePlanController,
+  makePlanDayController,
+} from "./audio"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
@@ -64,6 +70,15 @@ export default (app: express.Express): void => {
     "/v1/audio/:book/:chapter",
     validateQueryParams([]),
     makeAudioController(loadAudioIndex()),
+  )
+  // The +365 plan, in memory as the index above, and so ahead of "/v1/:book"
+  // and "/v1/:book/:chapter" too.
+  const plan = loadPlan()
+  app.get("/v1/mais365", validateQueryParams([]), makePlanController(plan))
+  app.get(
+    "/v1/mais365/:day",
+    validateQueryParams([]),
+    makePlanDayController(plan),
   )
 
   app.use(async (_req, res, next) => {
