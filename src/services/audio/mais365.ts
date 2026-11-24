@@ -107,20 +107,24 @@ const untilSentenceEnd = (text: string): string => {
  * Génesis 37; Job 27–28; Provérbios 3:25-27." Parts it cannot place are
  * returned in `unparsed`, so the caller can report them instead of guessing.
  */
-export const parseReadings = (
-  description: string,
-  books: BookName[],
-): { readings: Reading[]; unparsed: string[] } => {
+/** The sentence that lists the day's readings, without what leads to it. */
+const announcementOf = (description: string): string | null => {
   // Tags out, whitespace in one run: what follows reads plain text. Each
   // pattern here is linear, so a hostile description can't stall the parse.
   const text = description.replace(/<[^<>]*>/g, " ").replace(/\s+/g, " ")
   // "Hoje vamos ler …", or "Hoje lemos: …" (as from Dia 28).
   const after = /vamos (?:ler|ouvir)|\blemos\b/.exec(text)
-  const announced =
-    after &&
-    untilSentenceEnd(
-      text.slice(after.index + after[0].length).replace(/^[ :]+/, ""),
-    )
+  if (!after) return null
+  return untilSentenceEnd(
+    text.slice(after.index + after[0].length).replace(/^[ :]+/, ""),
+  )
+}
+
+export const parseReadings = (
+  description: string,
+  books: BookName[],
+): { readings: Reading[]; unparsed: string[] } => {
+  const announced = announcementOf(description)
   const readings: Reading[] = []
   const unparsed: string[] = []
   if (announced === null) return { readings, unparsed }

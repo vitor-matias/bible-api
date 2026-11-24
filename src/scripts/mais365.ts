@@ -16,6 +16,7 @@ import {
   findChapterEnd,
   findChapterStarts,
   parseReadings,
+  type Reading,
   type Segment,
 } from "../services/audio/mais365"
 
@@ -71,7 +72,9 @@ const priestsOf = (description: string): string | undefined => {
 // shortcut: regexes over Anchor's fixed RSS layout instead of an XML parser;
 // switch to a parser if the feed ever changes host.
 const field = (item: string, tag: string) =>
-  new RegExp(`<${tag}[^>]*>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</${tag}>`)
+  new RegExp(
+    String.raw`<${tag}[^>]*>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?</${tag}>`,
+  )
     .exec(item)?.[1]
     .trim() ?? ""
 
@@ -176,7 +179,8 @@ const transcribeWords = async (
     if (token.text.startsWith(" ") || words.length === 0) {
       words.push({ start, text: token.text })
     } else {
-      words[words.length - 1].text += token.text
+      const last = words.at(-1)
+      if (last) last.text += token.text
     }
   }
   return words
@@ -247,14 +251,145 @@ type PlanDay = {
   reflection: number
 }
 
+/** What one episode is, to time a day of it. */
+type Episode = {
+  item: string
+  day: number
+  title: string
+  theme: string
+  priest?: string
+  url: string
+  duration: number
+  description: string
+}
+
+/** Where the day's whole run is gathered: its chapters, and what to check. */
+type Run = {
+  books: BookName[]
+  chapters: Record<string, Timing[]>
+  problems: string[]
+}
+
+const bookNameOf = (bookId: string, books: BookName[]) =>
+  bookId === "psa"
+    ? "Salmo"
+    : (books.find((b) => b.id === bookId)?.shortName ?? bookId)
+
+/** One reading of a day: where it starts and ends, and its verses' times. */
+const timeReading = async (
+  episode: Episode,
+  reading: Reading,
+  start: number | undefined,
+  nextStart: number | undefined,
+  transcript: { segments: Segment[]; words: TimedWord[] },
+  run: Run,
+): Promise<PlanDay["readings"][number]> => {
+  const { day, title, url } = episode
+  const { bookId, chapter, verses: range } = reading
+  const report = (problem: string) =>
+    run.problems.push(`Dia ${day}: ${problem}`)
+  if (start === undefined) report(`no heading for ${bookId} ${chapter}`)
+  // Read in part (Provérbios 1:1-7): those verses only.
+  const verses = (await chapterVerses(bookId, chapter)).filter(
+    (verse) => !range || (verse.number >= range[0] && verse.number <= range[1]),
+  )
+  const end =
+    start === undefined
+      ? undefined
+      : findChapterEnd(
+          transcript.segments,
+          start,
+          nextStart,
+          verses.at(-1)?.text ?? "",
+        )
+  if (start !== undefined && end === undefined)
+    report(`no end for ${bookId} ${chapter}`)
+  const aligned =
+    start !== undefined && end !== undefined
+      ? alignVerses(transcript.words, verses, start, end)
+      : null
+  const total = verses.filter((verse) => verse.number > 0).length
+  if (!aligned) report(`${bookId} ${chapter} not aligned`)
+  else if (aligned.anchored < total * 0.6)
+    report(`${bookId} ${chapter} ${aligned.anchored}/${total} anchored`)
+  const timing: Timing = {
+    day,
+    title,
+    url,
+    start: start ?? null,
+    end: end ?? null,
+    ...(range && { range }),
+    ...(aligned && { verses: aligned.times }),
+  }
+  const key = `${bookId}/${chapter}`
+  run.chapters[key] ??= []
+  run.chapters[key].push(timing)
+  return {
+    bookId,
+    bookName: bookNameOf(bookId, run.books),
+    chapter,
+    ...(range && { range }),
+    episode: timing,
+  }
+}
+
+/** A day of the plan: its readings timed in its episode, then its reflection. */
+const timeDay = async (
+  episode: Episode,
+  run: Run,
+): Promise<PlanDay | undefined> => {
+  const { item, day, theme, priest, url, duration } = episode
+  let description = episode.description
+  for (const [wrong, right] of DESCRIPTION_FIXES[day] ?? [])
+    description = description.replace(wrong, right)
+  const { readings, unparsed } = parseReadings(description, run.books)
+  if (unparsed.length)
+    run.problems.push(`Dia ${day}: unparsed ${JSON.stringify(unparsed)}`)
+  if (!readings.length) {
+    run.problems.push(`Dia ${day}: no readings`)
+    return undefined
+  }
+  const guid = field(item, "guid")
+  const transcript = {
+    segments: await transcribe(guid, url),
+    words: await transcribeWords(guid, url),
+  }
+  const starts = findChapterStarts(transcript.segments, readings, run.books)
+  const planned: PlanDay["readings"] = []
+  for (const [i, reading] of readings.entries()) {
+    const nextStart = starts.slice(i + 1).find((s) => s !== undefined)
+    planned.push(
+      await timeReading(
+        episode,
+        reading,
+        starts[i],
+        nextStart,
+        transcript,
+        run,
+      ),
+    )
+  }
+  const lastEnd = planned.at(-1)?.episode.end
+  if (lastEnd == null) run.problems.push(`Dia ${day}: no reflection start`)
+  console.log(`Dia ${day}: ${readings.length} readings`)
+  return {
+    day,
+    title: theme,
+    theme,
+    priest,
+    url,
+    duration,
+    readings: planned,
+    reflection: lastEnd ?? duration,
+  }
+}
+
 const main = async () => {
   fs.mkdirSync(CACHE, { recursive: true })
   const books = (await (await fetch(`${API}/v1/books`)).json()) as BookName[]
   const feed = await (await fetch(FEED)).text()
-
-  const chapters: Record<string, Timing[]> = {}
+  const run: Run = { books, chapters: {}, problems: [] }
   const days: PlanDay[] = []
-  const problems: string[] = []
   const items = feed
     .split("<item>")
     .slice(1)
@@ -267,18 +402,23 @@ const main = async () => {
 
   let lastDay = 0
   for (const { item, title } of items) {
-    const url = /<enclosure url="([^"]+)"/.exec(item)?.[1] ?? ""
     const description = field(item, "description")
-    const duration = seconds(field(item, "itunes:duration"))
-    const priest = priestsOf(description)
-    const theme = title.replace(/^\s*Dia \d+\s*[-–]\s*/, "")
-    const day = Number(/^\s*Dia (\d+)/.exec(title)?.[1])
-
+    const episode: Episode = {
+      item,
+      day: Number(/^\s*Dia (\d+)/.exec(title)?.[1]),
+      title,
+      theme: title.replace(/^\s*Dia \d+\s*[-–]\s*/, ""),
+      priest: priestsOf(description),
+      url: /<enclosure url="([^"]+)"/.exec(item)?.[1] ?? "",
+      duration: seconds(field(item, "itunes:duration")),
+      description,
+    }
     // An introduction: after the day it came out with (Dia 0 before Dia 1).
-    if (!day) {
+    if (!episode.day) {
       const at = lastDay === 0 ? 0 : lastDay + 0.5
       const inRange = !onlyDays || onlyDays.has(Math.max(1, Math.ceil(at)))
       if (title.startsWith("Introdução") && inRange) {
+        const { priest, url, duration } = episode
         days.push({
           day: at,
           title,
@@ -292,101 +432,21 @@ const main = async () => {
       }
       continue
     }
-    lastDay = day
-    if (onlyDays && !onlyDays.has(day)) continue
-
+    lastDay = episode.day
+    if (onlyDays && !onlyDays.has(episode.day)) continue
     try {
-      let fixed = description
-      for (const [wrong, right] of DESCRIPTION_FIXES[day] ?? [])
-        fixed = fixed.replace(wrong, right)
-      const { readings, unparsed } = parseReadings(fixed, books)
-      if (unparsed.length)
-        problems.push(`Dia ${day}: unparsed ${JSON.stringify(unparsed)}`)
-      if (!readings.length) {
-        problems.push(`Dia ${day}: no readings`)
-        continue
-      }
-
-      const guid = field(item, "guid")
-      const segments = await transcribe(guid, url)
-      const words = await transcribeWords(guid, url)
-      const starts = findChapterStarts(segments, readings, books)
-      const planned: PlanDay["readings"] = []
-      for (const [i, reading] of readings.entries()) {
-        const { bookId, chapter, verses: range } = reading
-        const start = starts[i]
-        if (start === undefined)
-          problems.push(`Dia ${day}: no heading for ${bookId} ${chapter}`)
-        // Read in part (Provérbios 1:1-7): those verses only.
-        const verses = (await chapterVerses(bookId, chapter)).filter(
-          (verse) =>
-            !range || (verse.number >= range[0] && verse.number <= range[1]),
-        )
-        const nextStart = starts.slice(i + 1).find((s) => s !== undefined)
-        const end =
-          start === undefined
-            ? undefined
-            : findChapterEnd(
-                segments,
-                start,
-                nextStart,
-                verses.at(-1)?.text ?? "",
-              )
-        if (start !== undefined && end === undefined)
-          problems.push(`Dia ${day}: no end for ${bookId} ${chapter}`)
-        const aligned =
-          start !== undefined && end !== undefined
-            ? alignVerses(words, verses, start, end)
-            : null
-        const total = verses.filter((verse) => verse.number > 0).length
-        if (!aligned || aligned.anchored < total * 0.6)
-          problems.push(
-            `Dia ${day}: ${bookId} ${chapter} ${aligned ? `${aligned.anchored}/${total} anchored` : "not aligned"}`,
-          )
-        const timing: Timing = {
-          day,
-          title,
-          url,
-          start: start ?? null,
-          end: end ?? null,
-          ...(range && { range }),
-          ...(aligned && { verses: aligned.times }),
-        }
-        const key = `${bookId}/${chapter}`
-        chapters[key] ??= []
-        chapters[key].push(timing)
-        const book = books.find((b) => b.id === bookId)
-        planned.push({
-          bookId,
-          bookName: bookId === "psa" ? "Salmo" : (book?.shortName ?? bookId),
-          chapter,
-          ...(range && { range }),
-          episode: timing,
-        })
-      }
-      const lastEnd = planned.at(-1)?.episode.end
-      if (lastEnd == null) problems.push(`Dia ${day}: no reflection start`)
-      days.push({
-        day,
-        title: theme,
-        theme,
-        priest,
-        url,
-        duration,
-        readings: planned,
-        reflection: lastEnd ?? duration,
-      })
-      console.log(`Dia ${day}: ${readings.length} readings`)
+      const day = await timeDay(episode, run)
+      if (day) days.push(day)
     } catch (error) {
-      problems.push(
-        `Dia ${day}: failed, ${error instanceof Error ? error.message : error}`,
-      )
+      const message = error instanceof Error ? error.message : String(error)
+      run.problems.push(`Dia ${episode.day}: failed, ${message}`)
     }
   }
 
-  for (const entries of Object.values(chapters))
+  for (const entries of Object.values(run.chapters))
     entries.sort((a, b) => a.day - b.day)
   days.sort((a, b) => a.day - b.day)
+  const { chapters, problems } = run
   fs.mkdirSync(path.dirname(OUT), { recursive: true })
   fs.writeFileSync(OUT, `${JSON.stringify({ source: FEED, chapters, days })}\n`)
   console.log(
