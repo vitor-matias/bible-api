@@ -422,13 +422,9 @@ const introductionAfter = (
   }
 }
 
-const main = async () => {
-  fs.mkdirSync(CACHE, { recursive: true })
-  const books = (await (await fetch(`${API}/v1/books`)).json()) as BookName[]
-  const feed = await (await fetch(FEED)).text()
-  const run: Run = { books, chapters: {}, problems: [] }
-  const days: PlanDay[] = []
-  const items = feed
+/** The feed's items, oldest first: an introduction falls after its day. */
+const feedItems = (feed: string) =>
+  feed
     .split("<item>")
     .slice(1)
     .map((item) => ({
@@ -438,8 +434,30 @@ const main = async () => {
     }))
     .sort((a, b) => a.published - b.published)
 
+/** Writes the plan and the chapters' timings, and says what to check by ear. */
+const writeOut = (days: PlanDay[], { chapters, problems }: Run) => {
+  for (const entries of Object.values(chapters))
+    entries.sort((a, b) => a.day - b.day)
+  days.sort((a, b) => a.day - b.day)
+  fs.mkdirSync(path.dirname(OUT), { recursive: true })
+  fs.writeFileSync(OUT, `${JSON.stringify({ source: FEED, chapters, days })}\n`)
+  console.log(
+    `${days.length} days, ${Object.keys(chapters).length} chapters written to ${OUT}`,
+  )
+  // No run is clip-checked day by day.
+  console.log(`\n${problems.length} to check:`)
+  for (const problem of problems) console.log(`  ${problem}`)
+}
+
+const main = async () => {
+  fs.mkdirSync(CACHE, { recursive: true })
+  const books = (await (await fetch(`${API}/v1/books`)).json()) as BookName[]
+  const feed = await (await fetch(FEED)).text()
+  const run: Run = { books, chapters: {}, problems: [] }
+  const days: PlanDay[] = []
+
   let lastDay = 0
-  for (const { item, title } of items) {
+  for (const { item, title } of feedItems(feed)) {
     const episode = episodeOf(item, title)
     if (!episode.day) {
       const intro = introductionAfter(lastDay, episode)
@@ -452,23 +470,10 @@ const main = async () => {
       const day = await timeDay(episode, run)
       if (day) days.push(day)
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      run.problems.push(`Dia ${episode.day}: failed, ${message}`)
+      run.problems.push(`Dia ${episode.day}: failed, ${String(error)}`)
     }
   }
-
-  for (const entries of Object.values(run.chapters))
-    entries.sort((a, b) => a.day - b.day)
-  days.sort((a, b) => a.day - b.day)
-  const { chapters, problems } = run
-  fs.mkdirSync(path.dirname(OUT), { recursive: true })
-  fs.writeFileSync(OUT, `${JSON.stringify({ source: FEED, chapters, days })}\n`)
-  console.log(
-    `${days.length} days, ${Object.keys(chapters).length} chapters written to ${OUT}`,
-  )
-  // What to check by ear: no run is clip-checked day by day.
-  console.log(`\n${problems.length} to check:`)
-  for (const problem of problems) console.log(`  ${problem}`)
+  writeOut(days, run)
 }
 
 main().catch((error) => {
