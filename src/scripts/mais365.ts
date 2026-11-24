@@ -384,6 +384,44 @@ const timeDay = async (
   }
 }
 
+/** An item of the feed, as far as its RSS fields go. */
+const episodeOf = (item: string, title: string): Episode => {
+  const description = field(item, "description")
+  return {
+    item,
+    day: Number(/^\s*Dia (\d+)/.exec(title)?.[1]),
+    title,
+    theme: title.replace(/^\s*Dia \d+\s*[-–]\s*/, ""),
+    priest: priestsOf(description),
+    url: /<enclosure url="([^"]+)"/.exec(item)?.[1] ?? "",
+    duration: seconds(field(item, "itunes:duration")),
+    description,
+  }
+}
+
+/**
+ * An introduction, placed after the day it came out with (Dia 0 before
+ * Dia 1); undefined for any other special, or one outside --days.
+ */
+const introductionAfter = (
+  lastDay: number,
+  { title, priest, url, duration }: Episode,
+): PlanDay | undefined => {
+  const at = lastDay === 0 ? 0 : lastDay + 0.5
+  const inRange = !onlyDays || onlyDays.has(Math.max(1, Math.ceil(at)))
+  if (!title.startsWith("Introdução") || !inRange) return undefined
+  return {
+    day: at,
+    title,
+    theme: title,
+    priest,
+    url,
+    duration,
+    readings: [],
+    reflection: 0,
+  }
+}
+
 const main = async () => {
   fs.mkdirSync(CACHE, { recursive: true })
   const books = (await (await fetch(`${API}/v1/books`)).json()) as BookName[]
@@ -402,34 +440,10 @@ const main = async () => {
 
   let lastDay = 0
   for (const { item, title } of items) {
-    const description = field(item, "description")
-    const episode: Episode = {
-      item,
-      day: Number(/^\s*Dia (\d+)/.exec(title)?.[1]),
-      title,
-      theme: title.replace(/^\s*Dia \d+\s*[-–]\s*/, ""),
-      priest: priestsOf(description),
-      url: /<enclosure url="([^"]+)"/.exec(item)?.[1] ?? "",
-      duration: seconds(field(item, "itunes:duration")),
-      description,
-    }
-    // An introduction: after the day it came out with (Dia 0 before Dia 1).
+    const episode = episodeOf(item, title)
     if (!episode.day) {
-      const at = lastDay === 0 ? 0 : lastDay + 0.5
-      const inRange = !onlyDays || onlyDays.has(Math.max(1, Math.ceil(at)))
-      if (title.startsWith("Introdução") && inRange) {
-        const { priest, url, duration } = episode
-        days.push({
-          day: at,
-          title,
-          theme: title,
-          priest,
-          url,
-          duration,
-          readings: [],
-          reflection: 0,
-        })
-      }
+      const intro = introductionAfter(lastDay, episode)
+      if (intro) days.push(intro)
       continue
     }
     lastDay = episode.day
