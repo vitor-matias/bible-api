@@ -27,6 +27,11 @@ const ALIASES: Record<string, string[]> = {
   act: ["atos"],
   oba: ["obadias"],
   est: ["esther"],
+  // How Whisper mishears headings, again and again: "Ozeias 10", "Jusué 5".
+  hos: ["ozeias", "edeias", "euseias"],
+  jos: ["jusue"],
+  exo: ["a exodo", "a isodo", "autodo"],
+  sir: ["benesira"],
 }
 
 // Readers say "2º Livro dos Reis 25" or "Segundo o livro das Crónicas, 36"

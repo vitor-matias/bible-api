@@ -210,6 +210,30 @@ describe("findChapterStarts", () => {
   })
 })
 
+describe("findChapterStarts, misheard", () => {
+  it("hears the headings Whisper keeps getting wrong", () => {
+    const spoken = [
+      { start: 1, text: " Edeias 8" },
+      { start: 2, text: " Ozeias 10" },
+      { start: 3, text: " Jusué 5" },
+      { start: 4, text: " A Ísodo 3" },
+    ]
+    const wanted = [
+      { bookId: "hos", chapter: 8 },
+      { bookId: "hos", chapter: 10 },
+      { bookId: "jos", chapter: 5 },
+      { bookId: "exo", chapter: 3 },
+    ]
+    const withThem = [
+      ...books,
+      { id: "hos", shortName: "Oseias", chapterCount: 14 },
+      { id: "jos", shortName: "Josué", chapterCount: 24 },
+      { id: "exo", shortName: "Êxodo", chapterCount: 40 },
+    ]
+    assert.deepEqual(findChapterStarts(spoken, wanted, withThem), [1, 2, 3, 4])
+  })
+})
+
 describe("findChapterEnd", () => {
   const segments = [
     { start: 56.5, end: 63.8, text: " Génesis 5" },
