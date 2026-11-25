@@ -2,7 +2,7 @@
 // and where the reading starts. Runs locally (it needs ffmpeg and whisper-cli)
 // and re-runs cheaply, as transcripts are cached in .cache/mais365:
 //   npx tsc && node dist/scripts/mais365.js [--days 1-181 | --days 3,19]
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -20,6 +20,7 @@ import {
   findReadingStart,
   findTitle,
   parseReadings,
+  pastHeadingPause,
   type Reading,
   type Segment,
 } from "../services/audio/mais365"
@@ -115,6 +116,28 @@ const jingle = (() => {
   const bytes = fs.readFileSync(path.resolve("data/mais365-jingle.f32"))
   return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
 })()
+
+/** The pauses (0.4 s or more) in the 6 s from `from`, [start, end] each. */
+const pausesFrom = (
+  guid: string,
+  url: string,
+  from: number,
+): [number, number][] => {
+  // ffmpeg logs what it detects on stderr.
+  const log = spawnSync(
+    FFMPEG,
+    ["-v", "info", "-ss", String(from), "-t", "6"]
+      .concat(["-i", cachedAudio(guid) ?? url])
+      .concat(["-af", "silencedetect=n=-35dB:d=0.4", "-f", "null", "-"]),
+    { encoding: "utf8" },
+  ).stderr
+  const starts = [...log.matchAll(/silence_start: ([\d.]+)/g)]
+  const ends = [...log.matchAll(/silence_end: ([\d.]+)/g)]
+  return ends.map((end, i) => [
+    from + Number(starts[i]?.[1] ?? 0),
+    from + Number(end[1]),
+  ])
+}
 
 /** An episode's audio, if an earlier run kept it. */
 const cachedAudio = (guid: string): string | undefined => {
@@ -363,6 +386,7 @@ type Transcript = {
   words: TimedWord[]
   freshWords: () => Promise<TimedWord[]>
   jingleNear: (around: number, least?: number) => Promise<number | undefined>
+  pausesFrom: (from: number) => [number, number][]
 }
 
 /**
@@ -487,6 +511,8 @@ const timeReading = async (
     range && start !== undefined && firstVerse !== undefined
       ? findTitle(transcript.words, start, firstVerse, chapter)
       : undefined
+  // Where the chapter is named: its heading, or a part's title.
+  const heading = named?.start ?? start ?? 0
   const timing: Timing = {
     day,
     title,
@@ -495,7 +521,13 @@ const timeReading = async (
     end: end ?? null,
     ...(range && { range }),
     ...(named && { titleStart: named.start, titleEnd: named.end }),
-    ...(aligned && { verses: aligned.times }),
+    ...(aligned && {
+      verses: pastHeadingPause(
+        aligned.times,
+        heading,
+        transcript.pausesFrom(heading),
+      ),
+    }),
   }
   const key = `${bookId}/${chapter}`
   run.chapters[key] ??= []
@@ -579,6 +611,7 @@ const timeDay = async (
     },
     jingleNear: (around: number, least?: number) =>
       jingleNear(guid, url, around, least),
+    pausesFrom: (from: number) => pausesFrom(guid, url, from),
   }
   const starts = findChapterStarts(transcript.segments, readings, run.books)
   await placeUnheaded(day, readings, starts, transcript.segments, run)

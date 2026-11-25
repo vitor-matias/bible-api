@@ -337,6 +337,28 @@ export const findChapterEnd = (
 }
 
 /**
+ * Verse 1 moved past the pause after a heading Whisper didn't hear on its
+ * own («Marcos 16», «Êxodo 1»): placed from the heading, it was underlined
+ * while the chapter was named. The heading is the sound before the first
+ * pause of 0.4 s or more that starts within 3 s; verse 1 ends up 0.1 s
+ * before that pause ends, if it was earlier and verse 2 is later still.
+ */
+export const pastHeadingPause = (
+  verses: [number, number][],
+  start: number,
+  pauses: [number, number][],
+): [number, number][] => {
+  const pause = pauses.find(([from]) => from > start + 0.5 && from <= start + 3)
+  const [first, second] = verses
+  if (!pause || !first) return verses
+  const after = Math.round((pause[1] - 0.1) * 100) / 100
+  if (first[1] >= pause[1] - 0.3 || (second && after >= second[1])) {
+    return verses
+  }
+  return [[first[0], after], ...verses.slice(1)]
+}
+
+/**
  * Where a chapter's reading begins after its heading: the segment after the
  * one that is just the heading («Marcos 1», starting at `start`), whose time
  * Whisper keeps even when it loses the words that follow (Marcos 1:1-3).

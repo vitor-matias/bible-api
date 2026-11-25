@@ -8,6 +8,7 @@ import {
   findReadingStart,
   findTitle,
   parseReadings,
+  pastHeadingPause,
 } from "./mais365"
 
 const books: BookName[] = [
@@ -490,5 +491,49 @@ describe("findReadingStart", () => {
 
   it("keeps the heading's start for another chapter's number", () => {
     assert.equal(findReadingStart(segments, 49.76, 2), 49.76)
+  })
+})
+
+describe("pastHeadingPause", () => {
+  // Dia 161: «Marcos 16» unheard, then a pause, then «Passado o sábado».
+  const pauses: [number, number][] = [
+    [381.51, 382.66],
+    [383.58, 383.91],
+  ]
+
+  it("moves verse 1 out of the heading, to the pause's end", () => {
+    const verses: [number, number][] = [
+      [1, 380.96],
+      [2, 389.98],
+    ]
+    assert.deepEqual(pastHeadingPause(verses, 379.66, pauses), [
+      [1, 382.56],
+      [2, 389.98],
+    ])
+  })
+
+  it("leaves verse 1 already after the pause", () => {
+    const verses: [number, number][] = [
+      [1, 382.6],
+      [2, 389.98],
+    ]
+    assert.equal(pastHeadingPause(verses, 379.66, pauses), verses)
+  })
+
+  it("leaves it when the pause is too late to end a heading", () => {
+    const verses: [number, number][] = [
+      [1, 380.96],
+      [2, 389.98],
+    ]
+    assert.equal(pastHeadingPause(verses, 377, pauses), verses)
+  })
+
+  // 1 Crónicas 1: «Adão, Set, Enós,», verses shorter than the pause's wait.
+  it("never takes verse 1 past verse 2", () => {
+    const verses: [number, number][] = [
+      [1, 295.96],
+      [2, 299.05],
+    ]
+    assert.equal(pastHeadingPause(verses, 295.96, [[298.4, 299.5]]), verses)
   })
 })
