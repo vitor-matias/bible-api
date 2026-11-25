@@ -11,6 +11,7 @@ import {
   type TimedWord,
   type VerseText,
 } from "../services/audio/alignVerses"
+import { findTemplate } from "../services/audio/jingle"
 import {
   type BookName,
   findChapterEnd,
@@ -102,6 +103,57 @@ const field = (item: string, tag: string) =>
   )
     .exec(item)?.[1]
     .trim() ?? ""
+
+/**
+ * The end-of-reading jingle's first 0.8 s, 8 kHz mono float (data/), cut
+ * 0.1 s after it starts: from Dia 6, where it comes in under Provérbios 1,7.
+ */
+const JINGLE_RATE = 8000
+const JINGLE_LEAD = 0.1
+const jingle = (() => {
+  const bytes = fs.readFileSync(path.resolve("data/mais365-jingle.f32"))
+  return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
+})()
+
+/** An episode's audio, downloaded once and kept (whisper's isn't). */
+const episodeAudio = async (guid: string, url: string): Promise<string> => {
+  const file = path.join(CACHE, "audio", `${guid}.m4a`)
+  if (!fs.existsSync(file)) {
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    const response = await fetch(url)
+    if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`)
+    fs.writeFileSync(file, Buffer.from(await response.arrayBuffer()))
+  }
+  return file
+}
+
+/**
+ * Where the end-of-reading jingle starts near `around`, from 1 s before to
+ * 2 s after: the jingle can come in under a reading's last word, so a part
+ * ends just before it, not at its words' end. Undefined without a clear match.
+ */
+const jingleNear = async (
+  guid: string,
+  url: string,
+  around: number,
+): Promise<number | undefined> => {
+  const from = Math.max(0, around - 1)
+  const length = 3 + jingle.length / JINGLE_RATE
+  const pcm = execFileSync(
+    FFMPEG,
+    ["-v", "error", "-ss", String(from), "-t", String(length)]
+      .concat(["-i", await episodeAudio(guid, url)])
+      .concat(["-f", "f32le", "-ac", "1", "-ar", String(JINGLE_RATE), "-"]),
+    { maxBuffer: 1 << 26 },
+  )
+  const signal = new Float32Array(
+    pcm.buffer,
+    pcm.byteOffset,
+    pcm.byteLength / 4,
+  )
+  const { index, score } = findTemplate(signal, jingle)
+  return score < 0.6 ? undefined : from + index / JINGLE_RATE - JINGLE_LEAD
+}
 
 /**
  * Runs whisper-cli on an episode once, caching its JSON as <guid><suffix>:
@@ -318,6 +370,7 @@ const timeReading = async (
     segments: Segment[]
     words: TimedWord[]
     freshWords: () => Promise<TimedWord[]>
+    jingleNear: (around: number) => Promise<number | undefined>
   },
   run: Run,
 ): Promise<PlanDay["readings"][number]> => {
@@ -330,7 +383,7 @@ const timeReading = async (
   const verses = (await chapterVerses(bookId, chapter)).filter(
     (verse) => !range || (verse.number >= range[0] && verse.number <= range[1]),
   )
-  const end =
+  let end =
     start === undefined
       ? undefined
       : findChapterEnd(
@@ -340,6 +393,12 @@ const timeReading = async (
           verses.at(-1)?.text ?? "",
           nextFollows,
         )
+  // Read in part, heard on into the next part: up to the jingle, not into it.
+  if (range && end !== undefined) {
+    const onset = await transcript.jingleNear(end)
+    if (onset === undefined) report(`no jingle after ${bookId} ${chapter}`)
+    else end = Math.round((onset - 0.1) * 100) / 100
+  }
   if (start !== undefined && end === undefined)
     report(`no end for ${bookId} ${chapter}`)
   const align = (words: TimedWord[]) =>
@@ -451,6 +510,7 @@ const timeDay = async (
       fresh ??= transcribeWords(guid, url, true)
       return fresh
     },
+    jingleNear: (around: number) => jingleNear(guid, url, around),
   }
   const starts = findChapterStarts(transcript.segments, readings, run.books)
   await placeUnheaded(day, readings, starts, transcript.segments, run)
