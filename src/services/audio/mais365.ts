@@ -388,9 +388,13 @@ export const findTitle = (
       continue
     }
     const round = (seconds: number) => Math.round(seconds * 100) / 100
+    // A numbered book's name begins with its number: «2 Reis».
+    const before = heading[i - 2]
+    const first =
+      before && /^[123]$/.test(normalize(before.text)) ? before : name
     // A word's time marks a moment into it: a breath before each.
     return {
-      start: round(name.start - 0.35),
+      start: round(first.start - 0.35),
       end: round(Math.max(number.start + 0.3, next.start - 0.15)),
     }
   }

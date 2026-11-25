@@ -404,6 +404,19 @@ describe("findChapterOpening", () => {
 })
 
 describe("findTitle", () => {
+  it("starts a numbered book's name at its number", () => {
+    const named = [
+      { start: 100.2, text: " 2" },
+      { start: 100.6, text: " Reis" },
+      { start: 101.2, text: " 3," },
+      { start: 102.0, text: " 1" },
+      { start: 102.3, text: " a" },
+      { start: 102.5, text: " 7" },
+      { start: 104.0, text: " Josafá" },
+    ]
+    assert.equal(findTitle(named, 100.2, 104, 3)?.start, 99.85)
+  })
+
   // Dia 14: "Provérbios 3, 1 a 4" before Provérbios 3:1.
   const words = [
     { start: 871.9, text: " Provérbios" },
