@@ -44,9 +44,32 @@ const onlyDays =
     : null
 
 // Descriptions that name a reading wrongly, by day: [as written, as read].
+// Dia 144–156 and 173 name the psalms of other days; the episodes read the
+// official plan's (ejns.pt/mais365, "Plano de leitura oficial").
 const DESCRIPTION_FIXES: Record<number, [string, string][]> = {
+  144: [["Salmo 44", "Salmo 62"]],
+  145: [["Salmo 45", "Salmo 64"]],
+  146: [
+    ["2 Crónicas 6-7", "2 Crónicas 6"],
+    ["Salmo 46", "Salmo 65"],
+  ],
+  147: [
+    ["2 Crónicas 8", "2 Crónicas 7-8"],
+    ["Salmo 47", "Salmo 66"],
+  ],
   // Solomon's wealth, read with 1 Reis 6: 2 Crónicas 9 (the "2" is missing).
-  148: [["; Crónicas 9", "; 2 Crónicas 9"]],
+  148: [
+    ["; Crónicas 9", "; 2 Crónicas 9"],
+    ["Salmo 48", "Salmo 4"],
+  ],
+  149: [["Salmo 49", "Salmo 5"]],
+  150: [["Salmo 50", "Salmo 6"]],
+  151: [["Salmo 51", "Salmo 7"]],
+  152: [["Salmo 52", "Salmo 8"]],
+  153: [["Salmo 53", "Salmo 9"]],
+  155: [["Salmo 21", "Salmo 20"]],
+  156: [["Salmo 22", "Salmo 21"]],
+  173: [["Salmo 77", "Salmo 127"]],
 }
 
 /** "00:22:24", "22:24" or "1344": seconds. */
