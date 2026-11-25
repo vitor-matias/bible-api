@@ -5,6 +5,7 @@ import {
   findChapterEnd,
   findChapterOpening,
   findChapterStarts,
+  findReadingStart,
   findTitle,
   parseReadings,
 } from "./mais365"
@@ -454,5 +455,27 @@ describe("findTitle", () => {
   it("finds nothing for a heading that names no verses, or another chapter", () => {
     assert.equal(findTitle(words.slice(0, 2), 871.82, 875.8, 3), undefined)
     assert.equal(findTitle(words, 871.82, 875.8, 4), undefined)
+  })
+})
+
+describe("findReadingStart", () => {
+  // Dia 154: Whisper lost Marcos 1:1-3, its words timed from verse 4 on.
+  const segments = [
+    { start: 40.1, end: 49.2, text: " E agora a leitura." },
+    { start: 49.72, end: 50.76, text: " Marcos 1" },
+    { start: 52.84, end: 77.12, text: " João Batista apareceu no deserto" },
+  ]
+
+  it("begins after a heading said on its own", () => {
+    assert.equal(findReadingStart(segments, 49.76, 1), 52.84)
+  })
+
+  it("keeps the heading's start when it runs on into the text", () => {
+    const runOn = [{ start: 49.72, text: " Marcos 1 Princípio do Evangelho" }]
+    assert.equal(findReadingStart(runOn, 49.76, 1), 49.76)
+  })
+
+  it("keeps the heading's start for another chapter's number", () => {
+    assert.equal(findReadingStart(segments, 49.76, 2), 49.76)
   })
 })

@@ -17,6 +17,7 @@ import {
   findChapterEnd,
   findChapterOpening,
   findChapterStarts,
+  findReadingStart,
   findTitle,
   parseReadings,
   type Reading,
@@ -403,7 +404,13 @@ const timeReading = async (
     report(`no end for ${bookId} ${chapter}`)
   const align = (words: TimedWord[]) =>
     start !== undefined && end !== undefined
-      ? alignVerses(words, verses, start, end)
+      ? alignVerses(
+          words,
+          verses,
+          start,
+          end,
+          findReadingStart(transcript.segments, start, chapter),
+        )
       : null
   // Words lost to a loop in Whisper's pass: from a fresh one.
   const aligned =

@@ -337,6 +337,28 @@ export const findChapterEnd = (
 }
 
 /**
+ * Where a chapter's reading begins after its heading: the segment after the
+ * one that is just the heading («Marcos 1», starting at `start`), whose time
+ * Whisper keeps even when it loses the words that follow (Marcos 1:1-3).
+ * `start` when the heading runs on into the text.
+ */
+export const findReadingStart = (
+  segments: Segment[],
+  start: number,
+  chapter: number,
+): number => {
+  const index = segments.findIndex(
+    (segment) => Math.abs(segment.start - start) < 1,
+  )
+  const heading = segments[index]
+  const next = segments[index + 1]
+  const words = heading ? normalize(heading.text).split(" ") : []
+  return next && words.length <= 3 && words.at(-1) === String(chapter)
+    ? next.start
+    : start
+}
+
+/**
  * Where a heading's chapter name is said, when the day's verses follow it
  * ("Provérbios 3, 1 a 4"): from just before the book's name to just before
  * the first verse's number. Found from the first verse back: the chapter's
