@@ -3,6 +3,7 @@ import { describe, it } from "node:test"
 import {
   type BookName,
   findChapterEnd,
+  findChapterOpening,
   findChapterStarts,
   parseReadings,
 } from "./mais365"
@@ -187,6 +188,20 @@ describe("findChapterStarts", () => {
     ])
   })
 
+  // Dia 20: "…e vamos ouvir Génesis 38" | "Jó 29 e 30" | "Provérbios 3, 28 a 32".
+  it("takes no heading from the day's announcement of its readings", () => {
+    const announced = [
+      { start: 47.2, text: " e vamos ouvir Génesis 38" },
+      { start: 49.5, text: " Jó 29 e 30" },
+      { start: 59, text: " Naquele tempo, Judá apartou-se dos seus irmãos" },
+      { start: 300, text: " Jó 29" },
+    ]
+    assert.deepEqual(
+      findChapterStarts(announced, [{ bookId: "job", chapter: 29 }], books),
+      [300],
+    )
+  })
+
   it("hears ordinals, 'Livro de' and Esther's old spelling", () => {
     const spoken = [
       { start: 1, text: " 2º Livro dos Reis 25" },
@@ -291,6 +306,97 @@ describe("findChapterEnd", () => {
     assert.equal(
       findChapterEnd(segments, 280.8, 492.1, "achou graça ao olhar do Senhor"),
       489.9,
+    )
+  })
+
+  it("hears the text's 'Ámen' as Whisper's 'Amém', and leaves out a stanza's letter", () => {
+    const psalm = [
+      { start: 690, end: 695, text: " Bendito seja o Senhor, Deus de Israel," },
+      { start: 695, end: 700, text: " desde agora e para sempre. Amém. Amém." },
+    ]
+    assert.equal(
+      findChapterEnd(psalm, 690, undefined, "para sempre. Ámen! Ámen!"),
+      700,
+    )
+    assert.equal(
+      findChapterEnd(psalm, 690, undefined, "para sempre. Amém! \n Het"),
+      700,
+    )
+  })
+
+  it("ends at the words before a misheard last one", () => {
+    const said = [
+      { start: 869, end: 872, text: " conduziste o teu povo como um rebanho" },
+      { start: 872.5, end: 875, text: " pela mão de Moisés e de Arão" },
+    ]
+    assert.equal(
+      findChapterEnd(said, 860, undefined, "pela mão de Moisés e de Aarão."),
+      875,
+    )
+  })
+
+  // Deuteronómio 22: verses 19 and 29 close alike; the 29th went unheard.
+  it("takes the next chapter's start over closing words said long before it", () => {
+    const repeated = [
+      {
+        start: 540,
+        end: 544.7,
+        text: " e não poderá repudiá-la em toda a sua vida.",
+      },
+      { start: 545.5, end: 637, text: " Mas se a acusação for verdadeira" },
+      { start: 641.3, end: 650, text: " Oração de um aflito" },
+    ]
+    assert.equal(
+      findChapterEnd(
+        repeated,
+        384,
+        641.3,
+        "Não poderá repudiá-la em toda a sua vida.",
+      ),
+      641.3,
+    )
+  })
+})
+
+describe("findChapterOpening", () => {
+  const segments = [
+    { start: 600, text: " e ela tornar-se-á a sua mulher porque abusou dela." },
+    { start: 641.3, text: " Oração de um aflito que na sua miséria" },
+    { start: 656, text: " Senhor, escuta a minha oração" },
+  ]
+
+  it("starts a chapter read without its heading where its first verse is said", () => {
+    assert.equal(
+      findChapterOpening(
+        segments,
+        384,
+        undefined,
+        "Oração de um aflito que, na sua miséria, expõe a sua angústia",
+      ),
+      641.3,
+    )
+  })
+
+  it("finds the words after a misheard first one", () => {
+    const misheard = [
+      { start: 232.2, text: " Ao todo, 31 reis." },
+      { start: 239, text: " Jusué estava velho, avançado em anos." },
+    ]
+    assert.equal(
+      findChapterOpening(
+        misheard,
+        50,
+        546,
+        "Josué estava velho, avançado em anos, e o Senhor disse-lhe",
+      ),
+      239,
+    )
+  })
+
+  it("finds nothing outside its window", () => {
+    assert.equal(
+      findChapterOpening(segments, 384, 641, "Oração de um aflito que na sua"),
+      undefined,
     )
   })
 })

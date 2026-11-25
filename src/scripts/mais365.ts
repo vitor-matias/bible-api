@@ -14,6 +14,7 @@ import {
 import {
   type BookName,
   findChapterEnd,
+  findChapterOpening,
   findChapterStarts,
   parseReadings,
   type Reading,
@@ -304,6 +305,7 @@ const timeReading = async (
   reading: Reading,
   start: number | undefined,
   nextStart: number | undefined,
+  nextFollows: boolean,
   transcript: { segments: Segment[]; words: TimedWord[] },
   run: Run,
 ): Promise<PlanDay["readings"][number]> => {
@@ -324,6 +326,7 @@ const timeReading = async (
           start,
           nextStart,
           verses.at(-1)?.text ?? "",
+          nextFollows,
         )
   if (start !== undefined && end === undefined)
     report(`no end for ${bookId} ${chapter}`)
@@ -378,15 +381,55 @@ const timeDay = async (
     words: await transcribeWords(guid, url),
   }
   const starts = findChapterStarts(transcript.segments, readings, run.books)
+  // No heading (read straight on from the chapter before): where its first
+  // verse is said, between the readings around it.
+  for (const [i, reading] of readings.entries()) {
+    // The first may be placed after the announcement's sentence, which can
+    // end after the reading began: its opening words, if said sooner.
+    if (starts[i] !== undefined && i > 0) continue
+    const from =
+      starts
+        .slice(0, i)
+        .filter((s) => s !== undefined)
+        .at(-1) ?? 0
+    const to = starts.slice(i + 1).find((s) => s !== undefined)
+    const opening = (await chapterVerses(reading.bookId, reading.chapter)).find(
+      (verse) =>
+        verse.number > 0 &&
+        (!reading.verses || verse.number >= reading.verses[0]),
+    )
+    const found = findChapterOpening(
+      transcript.segments,
+      from,
+      to,
+      opening?.text ?? "",
+    )
+    const before = starts[i]
+    if (found === undefined || (before !== undefined && before <= found))
+      continue
+    starts[i] = found
+    if (before === undefined)
+      run.problems.push(
+        `Dia ${day}: ${reading.bookId} ${reading.chapter} from its first verse`,
+      )
+  }
   const planned: PlanDay["readings"] = []
   for (const [i, reading] of readings.entries()) {
     const nextStart = starts.slice(i + 1).find((s) => s !== undefined)
+    // No heading (read straight on from the chapter before): where that one
+    // ended.
+    const start = starts[i] ?? planned.at(-1)?.episode.end ?? undefined
+    if (starts[i] === undefined && start !== undefined)
+      run.problems.push(
+        `Dia ${day}: ${reading.bookId} ${reading.chapter} from the end before`,
+      )
     planned.push(
       await timeReading(
         episode,
         reading,
-        starts[i],
+        start,
         nextStart,
+        i + 1 >= readings.length || starts[i + 1] !== undefined,
         transcript,
         run,
       ),

@@ -30,8 +30,9 @@ const ALIASES: Record<string, string[]> = {
   // How Whisper mishears headings, again and again: "Ozeias 10", "Jusué 5".
   hos: ["ozeias", "edeias", "euseias"],
   jos: ["jusue"],
-  exo: ["a exodo", "a isodo", "autodo"],
   sir: ["benesira"],
+  exo: ["a exodo", "a isodo", "autodo", "eis o do"],
+  deu: ["patinomio"],
 }
 
 // Readers say "2º Livro dos Reis 25" or "Segundo o livro das Crónicas, 36"
@@ -178,12 +179,32 @@ export const findChapterStarts = (
     // Read in part, its verses alone can be all Whisper keeps of the heading
     // ("Provérbios 1, 1 a 7" heard as "1 a 7").
     const range = verses && `${verses[0]} a ${verses[1]}`
+    const heading = (said: string) =>
+      headings.some(
+        (h) =>
+          said === h ||
+          // Not the day's announcement listing it: "Jó 29 e 30", "3, 28 a 32".
+          (said.startsWith(`${h} `) && !/^ [ea] \d/.test(said.slice(h.length))),
+      ) ||
+      said === range ||
+      // The book's name dropped, the number alone: "41".
+      said === String(chapter)
     for (let i = cursor; i < segments.length; i++) {
-      const said = arabicTail(asShortName(normalize(segments[i].text)))
-      if (
-        headings.some((h) => said === h || said.startsWith(`${h} `)) ||
-        said === range
-      ) {
+      // A heading can straddle segments: "Levítico" | "24", "Cântico" |
+      // "dos Cânticos" | "8".
+      const joined = [1, 2, 3].map((size) =>
+        arabicTail(
+          asShortName(
+            normalize(
+              segments
+                .slice(i, i + size)
+                .map((s) => s.text)
+                .join(" "),
+            ),
+          ),
+        ),
+      )
+      if (joined.some(heading)) {
         cursor = i + 1
         return segments[i].start
       }
@@ -207,6 +228,45 @@ export const findChapterStarts = (
   return starts
 }
 
+const REPEAT_GAP = 30
+
+/**
+ * Where a chapter read without its heading starts: the first segment, from
+ * `from` and before `to`, that says its first verse's opening words.
+ */
+export const findChapterOpening = (
+  segments: Segment[],
+  from: number,
+  to: number | undefined,
+  firstVerse: string,
+): number | undefined => {
+  const words = normalize(firstVerse).split(" ").filter(Boolean)
+  const within = segments.filter(
+    (s) => s.start >= from && (to === undefined || s.start < to),
+  )
+  let joined = ""
+  const at = within.map((segment) => {
+    const offset = joined.length
+    joined += ` ${normalize(segment.text)}`
+    return offset
+  })
+  joined += " "
+  // Then the words after a misheard first one ("Jusué estava velho").
+  const openings = [words.slice(0, 5), words.slice(0, 4), words.slice(1, 5)]
+  for (const opening of openings) {
+    if (opening.length < 4) continue
+    const found = joined.indexOf(` ${opening.join(" ")} `)
+    if (found < 0) continue
+    return within[at.filter((offset) => offset <= found).length - 1].start
+  }
+  return undefined
+}
+
+// Psalm 119's stanzas are headed by a Hebrew letter, which the text puts at
+// the end of the verse before ("… instruções! \n Het").
+const STANZA_LETTER =
+  /\n\s*(?:Alef|Bet|Guimel|Dalet|He|Vau|Zain|Het|Tet|Yod|Caf|Lamed|Mem|Nun|Samec|Ain|Phe|Sadé|Qof|Resh|Shin|Tau)\s*$/
+
 /**
  * Where a chapter's reading ends: the last transcript segment, after its
  * start and before the next chapter's, that says the closing words of its
@@ -218,8 +278,15 @@ export const findChapterEnd = (
   start: number,
   nextStart: number | undefined,
   lastVerse: string,
+  // The next start is the very next chapter's, not one after a chapter that
+  // couldn't be placed.
+  nextFollows = true,
 ): number | undefined => {
-  const words = normalize(lastVerse).split(" ").filter(Boolean)
+  const words = normalize(lastVerse.replace(STANZA_LETTER, ""))
+    .split(" ")
+    .filter(Boolean)
+    // Whisper writes "Amém" for the text's "Ámen".
+    .map((word) => (word === "amen" ? "amem" : word))
   const within = segments.filter(
     (s) => s.start >= start && (nextStart === undefined || s.start < nextStart),
   )
@@ -232,16 +299,29 @@ export const findChapterEnd = (
     return offset
   })
   joined += " "
-  for (const size of [3, 2]) {
-    if (words.length < size) continue
-    const found = joined.lastIndexOf(` ${words.slice(-size).join(" ")} `)
+  // The closing words, then those before a misheard last word ("Aarão" said
+  // as "Arão").
+  const phrases = [
+    words.slice(-3),
+    words.slice(-2),
+    words.slice(-4, -1),
+    words.slice(-3, -1),
+  ].filter((phrase) => phrase.length >= 2)
+  for (const phrase of phrases) {
+    const said = ` ${phrase.join(" ")} `
+    const found = joined.lastIndexOf(said)
     if (found < 0) continue
-    const lastWord = found + words.slice(-size).join(" ").length
+    const lastWord = found + said.length - 2
     // Offsets ascend, so the ones up to the last word end at its segment.
     const index = at.filter((offset) => offset <= lastWord).length - 1
     const segment = within[index]
     const next = segments[segments.indexOf(segment) + 1]
-    return segment.end ?? next?.start ?? segment.start
+    const end = segment.end ?? next?.start ?? segment.start
+    // Chapters follow within seconds: so far before the next one, the closing
+    // words were said earlier in the chapter too, and not heard at its end.
+    if (nextFollows && nextStart !== undefined && nextStart - end > REPEAT_GAP)
+      break
+    return end
   }
   return nextStart
 }
