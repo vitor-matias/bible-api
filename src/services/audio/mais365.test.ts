@@ -7,6 +7,8 @@ import {
   findChapterStarts,
   findReadingStart,
   findTitle,
+  losesWords,
+  mergePlan,
   parseReadings,
   pastHeadingPause,
 } from "./mais365"
@@ -535,5 +537,95 @@ describe("pastHeadingPause", () => {
       [2, 299.05],
     ]
     assert.equal(pastHeadingPause(verses, 295.96, [[298.4, 299.5]]), verses)
+  })
+})
+
+describe("losesWords", () => {
+  // Dia 154: Marcos 1:1-4 read in 24 s, heard as verse 4's 16 words.
+  const lost =
+    " João Batista apareceu no deserto a pregar um batismo de arrependimento para a remissão dos pecados."
+
+  it("finds a long stretch heard as too few words", () => {
+    assert.equal(
+      losesWords([{ start: 52.84, end: 77.12, text: lost }], 49.76, 373.82),
+      true,
+    )
+  })
+
+  it("passes a stretch read at its pace", () => {
+    const read = `${lost} ${lost} ${lost}`
+    assert.equal(
+      losesWords([{ start: 52.84, end: 77.12, text: read }], 49.76, 373.82),
+      false,
+    )
+  })
+
+  it("looks only within the reading", () => {
+    assert.equal(
+      losesWords([{ start: 52.84, end: 77.12, text: lost }], 100, 373.82),
+      false,
+    )
+  })
+})
+
+describe("mergePlan", () => {
+  const before = {
+    chapters: {
+      "mrk/1": [{ day: 154, start: 49.76 }],
+      "mrk/3": [{ day: 155, start: 51.3 }],
+      "pro/3": [
+        { day: 14, start: 871.82 },
+        { day: 15, start: 1021.24 },
+      ],
+    },
+    days: [{ day: 14 }, { day: 15 }, { day: 154 }, { day: 155 }],
+  }
+
+  it("replaces the days run again and keeps the rest", () => {
+    const run = {
+      chapters: {
+        "mrk/1": [{ day: 154, start: 50 }],
+        "pro/3": [{ day: 14, start: 872 }],
+      },
+      days: [{ day: 14 }, { day: 154 }],
+    }
+    const merged = mergePlan(before, run)
+    assert.deepEqual(merged.chapters["mrk/1"], [{ day: 154, start: 50 }])
+    assert.deepEqual(merged.chapters["mrk/3"], [{ day: 155, start: 51.3 }])
+    assert.deepEqual(
+      merged.chapters["pro/3"].map((entry) => entry.day).sort(),
+      [14, 15],
+    )
+    assert.deepEqual(
+      merged.days.map((day) => day.day).sort((a, b) => a - b),
+      [14, 15, 154, 155],
+    )
+  })
+
+  it("keeps the chapters in their order", () => {
+    const run = {
+      chapters: { "mrk/1": [{ day: 154, start: 50 }] },
+      days: [{ day: 154 }],
+    }
+    assert.deepEqual(Object.keys(mergePlan(before, run).chapters), [
+      "mrk/1",
+      "mrk/3",
+      "pro/3",
+    ])
+  })
+
+  it("keeps a day that failed partway as it was", () => {
+    const run = {
+      chapters: { "mrk/3": [{ day: 155, start: 60 }] },
+      days: [],
+    }
+    assert.deepEqual(mergePlan(before, run).chapters["mrk/3"], [
+      { day: 155, start: 51.3 },
+    ])
+  })
+
+  it("drops a chapter a day no longer reads", () => {
+    const merged = mergePlan(before, { chapters: {}, days: [{ day: 155 }] })
+    assert.equal(merged.chapters["mrk/3"], undefined)
   })
 })
