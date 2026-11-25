@@ -448,6 +448,7 @@ const alignReading = async (
   end: number,
   chapter: number,
   heard: number,
+  report: (problem: string) => void,
 ) => {
   // The heading's segment starts where it was heard, maybe on the jingle.
   const readFrom = Math.max(
@@ -461,7 +462,14 @@ const alignReading = async (
   // 1:1-3, the one word kept from it timed 4.5 s early): from a fresh one,
   // if it lines up more verses.
   if (first && !losesWords(transcript.segments, start, end)) return first
-  const fresh = align(await transcript.freshWords())
+  // Without a first alignment its failure is the day's; with one, a note.
+  const words = first
+    ? await transcript.freshWords().catch((error: unknown) => {
+        report(`fresh pass failed, ${String(error)}`)
+        return undefined
+      })
+    : await transcript.freshWords()
+  const fresh = words && align(words)
   return fresh && fresh.anchored > (first?.anchored ?? -1) ? fresh : first
 }
 
@@ -508,6 +516,7 @@ const timeReading = async (
           end,
           chapter,
           heard ?? start,
+          report,
         )
       : null
   const total = verses.filter((verse) => verse.number > 0).length

@@ -614,6 +614,16 @@ describe("mergePlan", () => {
     ])
   })
 
+  it("keeps a day that failed partway as it was", () => {
+    const run = {
+      chapters: { "mrk/3": [{ day: 155, start: 60 }] },
+      days: [],
+    }
+    assert.deepEqual(mergePlan(before, run).chapters["mrk/3"], [
+      { day: 155, start: 51.3 },
+    ])
+  })
+
   it("drops a chapter a day no longer reads", () => {
     const merged = mergePlan(before, { chapters: {}, days: [{ day: 155 }] })
     assert.equal(merged.chapters["mrk/3"], undefined)

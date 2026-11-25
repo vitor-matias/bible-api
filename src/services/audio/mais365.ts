@@ -353,8 +353,10 @@ export const mergePlan = <
   for (const [key, entries] of Object.entries(before.chapters)) {
     chapters[key] = entries.filter((entry) => !redone.has(entry.day))
   }
+  // Only days that finished: one that failed partway keeps its old timings.
   for (const [key, entries] of Object.entries(run.chapters)) {
-    chapters[key] = [...(chapters[key] ?? []), ...entries]
+    const done = entries.filter((entry) => redone.has(entry.day))
+    chapters[key] = [...(chapters[key] ?? []), ...done]
   }
   for (const [key, entries] of Object.entries(chapters)) {
     if (entries.length === 0) delete chapters[key]
