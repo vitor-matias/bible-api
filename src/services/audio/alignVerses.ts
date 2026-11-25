@@ -86,7 +86,12 @@ export const alignVerses = (
   )
 
   // Each verse's first word, and the time its run of two first matches.
-  const firstWord = read.map((_, v) => expected.findIndex((t) => t.verse === v))
+  // A verse with no words (left out of the text, as João 5:4) takes the
+  // next one's place, and is placed between its neighbours.
+  const firstWord = read.map((_, v) => {
+    const index = expected.findIndex((t) => t.verse >= v)
+    return index < 0 ? expected.length : index
+  })
   const anchors: (number | undefined)[] = read.map((_, v) => {
     for (
       let i = firstWord[v];

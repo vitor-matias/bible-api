@@ -56,6 +56,26 @@ describe("alignVerses", () => {
     assert.ok(second > 58 && second < 70, `verse 2 at ${second}`)
   })
 
+  // João 5:4 is left out of the text: "[]", no words to say.
+  it("places a verse with no words between its neighbours", () => {
+    const withGap = [
+      ...verses.slice(0, 3),
+      { number: 3, text: "[] " },
+      { ...verses[3], number: 4 },
+    ]
+    const words = [
+      ...said("No princípio quando Deus criou os céus e a terra", 58),
+      ...said("a terra era informe e vazia", 64),
+      ...said("Deus disse Faça-se a luz E a luz foi feita", 70),
+    ]
+    const result = alignVerses(words, withGap, 56, 80)
+    assert.deepEqual(
+      result?.times.map(([number]) => number),
+      [1, 2, 3, 4],
+    )
+    assert.deepEqual(result?.times[3], [4, 70])
+  })
+
   it("never goes back in time on a stray match", () => {
     // Verse 3's words said again, out of order, before verse 2.
     const words = [
