@@ -180,13 +180,17 @@ const transcribe = async (guid: string, url: string): Promise<Segment[]> => {
 const transcribeWords = async (
   guid: string,
   url: string,
+  // Without the text before as a prompt (-mc 0): a pass that fell into a
+  // loop ("Deus abençoar o teu servo." a hundred times) is run again so.
+  fresh = false,
 ): Promise<TimedWord[]> => {
   const { transcription } = JSON.parse(
-    await whisper(guid, url, ".words.json", [
+    await whisper(guid, url, fresh ? ".words-fresh.json" : ".words.json", [
       "-nfa",
       "-dtw",
       "large.v3.turbo",
       "-ojf",
+      ...(fresh ? ["-mc", "0"] : []),
     ]),
   ) as { transcription: WhisperSegment[] }
   const tokens = transcription
@@ -306,7 +310,11 @@ const timeReading = async (
   start: number | undefined,
   nextStart: number | undefined,
   nextFollows: boolean,
-  transcript: { segments: Segment[]; words: TimedWord[] },
+  transcript: {
+    segments: Segment[]
+    words: TimedWord[]
+    freshWords: () => Promise<TimedWord[]>
+  },
   run: Run,
 ): Promise<PlanDay["readings"][number]> => {
   const { day, title, url } = episode
@@ -330,10 +338,16 @@ const timeReading = async (
         )
   if (start !== undefined && end === undefined)
     report(`no end for ${bookId} ${chapter}`)
-  const aligned =
+  const align = (words: TimedWord[]) =>
     start !== undefined && end !== undefined
-      ? alignVerses(transcript.words, verses, start, end)
+      ? alignVerses(words, verses, start, end)
       : null
+  // Words lost to a loop in Whisper's pass: from a fresh one.
+  const aligned =
+    align(transcript.words) ??
+    (start !== undefined && end !== undefined
+      ? align(await transcript.freshWords())
+      : null)
   const total = verses.filter((verse) => verse.number > 0).length
   if (!aligned) report(`${bookId} ${chapter} not aligned`)
   else if (aligned.anchored < total * 0.6)
@@ -376,9 +390,14 @@ const timeDay = async (
     return undefined
   }
   const guid = field(item, "guid")
+  let fresh: Promise<TimedWord[]> | undefined
   const transcript = {
     segments: await transcribe(guid, url),
     words: await transcribeWords(guid, url),
+    freshWords: () => {
+      fresh ??= transcribeWords(guid, url, true)
+      return fresh
+    },
   }
   const starts = findChapterStarts(transcript.segments, readings, run.books)
   // No heading (read straight on from the chapter before): where its first
