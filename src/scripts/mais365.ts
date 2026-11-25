@@ -2,7 +2,7 @@
 // and where the reading starts. Runs locally (it needs ffmpeg and whisper-cli)
 // and re-runs cheaply, as transcripts are cached in .cache/mais365:
 //   npx tsc && node dist/scripts/mais365.js [--days 1-181 | --days 3,19]
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -20,6 +20,7 @@ import {
   findReadingStart,
   findTitle,
   parseReadings,
+  pastHeadingPause,
   type Reading,
   type Segment,
 } from "../services/audio/mais365"
@@ -116,34 +117,54 @@ const jingle = (() => {
   return new Float32Array(bytes.buffer, bytes.byteOffset, bytes.byteLength / 4)
 })()
 
-/** An episode's audio, downloaded once and kept (whisper's isn't). */
-const episodeAudio = async (guid: string, url: string): Promise<string> => {
+/** The pauses (0.4 s or more) in the 6 s from `from`, [start, end] each. */
+const pausesFrom = (
+  guid: string,
+  url: string,
+  from: number,
+): [number, number][] => {
+  // ffmpeg logs what it detects on stderr.
+  const log = spawnSync(
+    FFMPEG,
+    ["-v", "info", "-ss", String(from), "-t", "6"]
+      .concat(["-i", cachedAudio(guid) ?? url])
+      .concat(["-af", "silencedetect=n=-35dB:d=0.4", "-f", "null", "-"]),
+    { encoding: "utf8" },
+  ).stderr
+  const starts = [...log.matchAll(/silence_start: ([\d.]+)/g)]
+  const ends = [...log.matchAll(/silence_end: ([\d.]+)/g)]
+  return ends.map((end, i) => [
+    from + Number(starts[i]?.[1] ?? 0),
+    from + Number(end[1]),
+  ])
+}
+
+/** An episode's audio, if an earlier run kept it. */
+const cachedAudio = (guid: string): string | undefined => {
   const file = path.join(CACHE, "audio", `${guid}.m4a`)
-  if (!fs.existsSync(file)) {
-    fs.mkdirSync(path.dirname(file), { recursive: true })
-    const response = await fetch(url)
-    if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`)
-    fs.writeFileSync(file, Buffer.from(await response.arrayBuffer()))
-  }
-  return file
+  return fs.existsSync(file) ? file : undefined
 }
 
 /**
  * Where the end-of-reading jingle starts near `around`, from 1 s before to
  * 2 s after: the jingle can come in under a reading's last word, so a part
- * ends just before it, not at its words' end. Undefined without a clear match.
+ * ends just before it, not at its words' end. Undefined without a match as
+ * clear as `least` (speech alone scores 0.3 at most; the jingle 0.44 to 0.48
+ * where it starts on its own, before a heading).
  */
 const jingleNear = async (
   guid: string,
   url: string,
   around: number,
+  least = 0.6,
 ): Promise<number | undefined> => {
   const from = Math.max(0, around - 1)
   const length = 3 + jingle.length / JINGLE_RATE
   const pcm = execFileSync(
     FFMPEG,
     ["-v", "error", "-ss", String(from), "-t", String(length)]
-      .concat(["-i", await episodeAudio(guid, url)])
+      // Read from the stream unless kept: ffmpeg seeks in it.
+      .concat(["-i", cachedAudio(guid) ?? url])
       .concat(["-f", "f32le", "-ac", "1", "-ar", String(JINGLE_RATE), "-"]),
     { maxBuffer: 1 << 26 },
   )
@@ -153,7 +174,7 @@ const jingleNear = async (
     pcm.byteLength / 4,
   )
   const { index, score } = findTemplate(signal, jingle)
-  return score < 0.6 ? undefined : from + index / JINGLE_RATE - JINGLE_LEAD
+  return score < least ? undefined : from + index / JINGLE_RATE - JINGLE_LEAD
 }
 
 /**
@@ -360,73 +381,138 @@ const bookNameOf = (bookId: string, books: BookName[]) =>
     ? "Salmo"
     : (books.find((b) => b.id === bookId)?.shortName ?? bookId)
 
+type Transcript = {
+  segments: Segment[]
+  words: TimedWord[]
+  freshWords: () => Promise<TimedWord[]>
+  jingleNear: (around: number, least?: number) => Promise<number | undefined>
+  pausesFrom: (from: number) => [number, number][]
+}
+
+/**
+ * The end-of-reading jingle's length, from its onset to just before the next
+ * heading: 4.6 s from Dia 2 (Génesis 4) and Dia 68 (Números 20), less a breath.
+ */
+const JINGLE_LENGTH = 4.3
+
+/**
+ * Where a reading starts, past the jingle before it: a start found from the
+ * text (the heading unheard, or the reading before ending early) can fall on
+ * it, and the chapter played from there opened with the music.
+ */
+const pastJingle = async (
+  transcript: Transcript,
+  start: number,
+): Promise<number> => {
+  const onset = await transcript.jingleNear(start, 0.4)
+  return onset !== undefined && onset < start + 1.5
+    ? Math.round((onset + JINGLE_LENGTH) * 100) / 100
+    : start
+}
+
+/** Where a reading ends: in part, just before the jingle that follows it. */
+const readingEnd = async (
+  transcript: Transcript,
+  start: number,
+  nextStart: number | undefined,
+  verses: VerseText[],
+  nextFollows: boolean,
+  range: [number, number] | undefined,
+  report: (problem: string) => void,
+): Promise<number | undefined> => {
+  const end = findChapterEnd(
+    transcript.segments,
+    start,
+    nextStart,
+    verses.at(-1)?.text ?? "",
+    nextFollows,
+  )
+  // Read in part, heard on into the next part: up to the jingle, not into it.
+  if (!range || end === undefined) return end
+  const onset = await transcript.jingleNear(end)
+  if (onset === undefined) {
+    report("no jingle after it")
+    return end
+  }
+  return Math.round((onset - 0.1) * 100) / 100
+}
+
+/** Its verses' times, from a fresh pass of Whisper if the first lost words. */
+const alignReading = async (
+  transcript: Transcript,
+  verses: VerseText[],
+  start: number,
+  end: number,
+  chapter: number,
+  heard: number,
+) => {
+  // The heading's segment starts where it was heard, maybe on the jingle.
+  const readFrom = Math.max(
+    start,
+    findReadingStart(transcript.segments, heard, chapter),
+  )
+  const align = (words: TimedWord[]) =>
+    alignVerses(words, verses, start, end, readFrom)
+  // Words lost to a loop in Whisper's pass: from a fresh one.
+  return align(transcript.words) ?? align(await transcript.freshWords())
+}
+
 /** One reading of a day: where it starts and ends, and its verses' times. */
 const timeReading = async (
   episode: Episode,
   reading: Reading,
-  start: number | undefined,
+  heard: number | undefined,
   nextStart: number | undefined,
   nextFollows: boolean,
-  transcript: {
-    segments: Segment[]
-    words: TimedWord[]
-    freshWords: () => Promise<TimedWord[]>
-    jingleNear: (around: number) => Promise<number | undefined>
-  },
+  transcript: Transcript,
   run: Run,
 ): Promise<PlanDay["readings"][number]> => {
   const { day, title, url } = episode
   const { bookId, chapter, verses: range } = reading
   const report = (problem: string) =>
-    run.problems.push(`Dia ${day}: ${problem}`)
-  if (start === undefined) report(`no heading for ${bookId} ${chapter}`)
+    run.problems.push(`Dia ${day}: ${bookId} ${chapter}: ${problem}`)
+  if (heard === undefined) report("no heading")
   // Read in part (Provérbios 1:1-7): those verses only.
   const verses = (await chapterVerses(bookId, chapter)).filter(
     (verse) => !range || (verse.number >= range[0] && verse.number <= range[1]),
   )
-  let end =
-    start === undefined
+  const end =
+    heard === undefined
       ? undefined
-      : findChapterEnd(
-          transcript.segments,
-          start,
+      : await readingEnd(
+          transcript,
+          heard,
           nextStart,
-          verses.at(-1)?.text ?? "",
+          verses,
           nextFollows,
+          range,
+          report,
         )
-  // Read in part, heard on into the next part: up to the jingle, not into it.
-  if (range && end !== undefined) {
-    const onset = await transcript.jingleNear(end)
-    if (onset === undefined) report(`no jingle after ${bookId} ${chapter}`)
-    else end = Math.round((onset - 0.1) * 100) / 100
-  }
-  if (start !== undefined && end === undefined)
-    report(`no end for ${bookId} ${chapter}`)
-  const align = (words: TimedWord[]) =>
+  if (heard !== undefined && end === undefined) report("no end")
+  const start =
+    heard === undefined ? undefined : await pastJingle(transcript, heard)
+  const aligned =
     start !== undefined && end !== undefined
-      ? alignVerses(
-          words,
+      ? await alignReading(
+          transcript,
           verses,
           start,
           end,
-          findReadingStart(transcript.segments, start, chapter),
+          chapter,
+          heard ?? start,
         )
       : null
-  // Words lost to a loop in Whisper's pass: from a fresh one.
-  const aligned =
-    align(transcript.words) ??
-    (start !== undefined && end !== undefined
-      ? align(await transcript.freshWords())
-      : null)
   const total = verses.filter((verse) => verse.number > 0).length
-  if (!aligned) report(`${bookId} ${chapter} not aligned`)
+  if (!aligned) report("not aligned")
   else if (aligned.anchored < total * 0.6)
-    report(`${bookId} ${chapter} ${aligned.anchored}/${total} anchored`)
+    report(`${aligned.anchored}/${total} anchored`)
   const firstVerse = aligned?.times[0]?.[1]
   const named =
     range && start !== undefined && firstVerse !== undefined
       ? findTitle(transcript.words, start, firstVerse, chapter)
       : undefined
+  // Where the chapter is named: its heading, or a part's title.
+  const heading = named?.start ?? start ?? 0
   const timing: Timing = {
     day,
     title,
@@ -435,7 +521,13 @@ const timeReading = async (
     end: end ?? null,
     ...(range && { range }),
     ...(named && { titleStart: named.start, titleEnd: named.end }),
-    ...(aligned && { verses: aligned.times }),
+    ...(aligned && {
+      verses: pastHeadingPause(
+        aligned.times,
+        heading,
+        transcript.pausesFrom(heading),
+      ),
+    }),
   }
   const key = `${bookId}/${chapter}`
   run.chapters[key] ??= []
@@ -517,7 +609,9 @@ const timeDay = async (
       fresh ??= transcribeWords(guid, url, true)
       return fresh
     },
-    jingleNear: (around: number) => jingleNear(guid, url, around),
+    jingleNear: (around: number, least?: number) =>
+      jingleNear(guid, url, around, least),
+    pausesFrom: (from: number) => pausesFrom(guid, url, from),
   }
   const starts = findChapterStarts(transcript.segments, readings, run.books)
   await placeUnheaded(day, readings, starts, transcript.segments, run)
