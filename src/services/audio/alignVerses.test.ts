@@ -44,6 +44,19 @@ describe("alignVerses", () => {
     assert.deepEqual(result?.times[0], [1, 58.34])
   })
 
+  // Marcos 1: verses 1 to 3 unheard; verse 1 was underlined while the
+  // reader still said «Marcos 1».
+  it("starts a first verse that wasn't heard after the heading", () => {
+    const words = [
+      ...said("Génesis 1", 56),
+      ...said("ruído que não se entende", 58),
+      ...said("a terra era informe e vazia", 64),
+      ...said("Deus disse Faça-se a luz E a luz foi feita", 70),
+    ]
+    const result = alignVerses(words, verses, 56, 80, 58)
+    assert.deepEqual(result?.times[0], [1, 58])
+  })
+
   it("puts an unmatched verse between its neighbours, by its words", () => {
     const words = [
       ...said("No princípio quando Deus criou os céus e a terra", 58),

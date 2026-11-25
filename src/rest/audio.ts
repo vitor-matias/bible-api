@@ -19,6 +19,9 @@ export type AudioEpisode = {
   // day's verses are named ("Provérbios 3 | 1 a 4"), so a chapter heard
   // whole can say its name and skip the rest.
   titleEnd?: number
+  // And where it starts: the heading's segment can begin seconds before the
+  // name (the reading before, the jingle) or, heard as "1 a 7", after it.
+  titleStart?: number
   // [verse, seconds into the episode] for each verse, where the reading lines
   // up well enough with the text to follow it verse by verse.
   verses?: [number, number][]

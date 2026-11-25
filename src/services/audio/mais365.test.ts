@@ -5,7 +5,8 @@ import {
   findChapterEnd,
   findChapterOpening,
   findChapterStarts,
-  findTitleEnd,
+  findReadingStart,
+  findTitle,
   parseReadings,
 } from "./mais365"
 
@@ -402,7 +403,20 @@ describe("findChapterOpening", () => {
   })
 })
 
-describe("findTitleEnd", () => {
+describe("findTitle", () => {
+  it("starts a numbered book's name at its number", () => {
+    const named = [
+      { start: 100.2, text: " 2" },
+      { start: 100.6, text: " Reis" },
+      { start: 101.2, text: " 3," },
+      { start: 102.0, text: " 1" },
+      { start: 102.3, text: " a" },
+      { start: 102.5, text: " 7" },
+      { start: 104.0, text: " Josafá" },
+    ]
+    assert.equal(findTitle(named, 100.2, 104, 3)?.start, 99.85)
+  })
+
   // Dia 14: "Provérbios 3, 1 a 4" before Provérbios 3:1.
   const words = [
     { start: 871.9, text: " Provérbios" },
@@ -413,12 +427,68 @@ describe("findTitleEnd", () => {
     { start: 875.8, text: " Meu" },
   ]
 
-  it("ends the chapter's name just before the day's verses are named", () => {
-    assert.equal(findTitleEnd(words, 871.82, 875.8, 3), 873.45)
+  it("says where the chapter's name starts and ends, before the verses named", () => {
+    assert.deepEqual(findTitle(words, 871.82, 875.8, 3), {
+      start: 871.55,
+      end: 873.45,
+    })
+  })
+
+  // Dia 6: the heading's segment, heard as "1 a 7", starts after the name.
+  it("finds a name said before the heading's segment, and a verse 1 after it", () => {
+    const dia6 = [
+      { start: 764.84, text: " grande." },
+      { start: 769.32, text: " Provérbios" },
+      { start: 770.1, text: " 1" },
+      { start: 770.98, text: " 1" },
+      { start: 771.42, text: " a" },
+      { start: 771.68, text: " 7" },
+      { start: 773.22, text: " Provérbios" },
+    ]
+    assert.deepEqual(findTitle(dia6, 770.76, 773.22, 1), {
+      start: 768.97,
+      end: 770.83,
+    })
+  })
+
+  // Dia 9: the segment starts on the reading before, 5 s ahead of the name.
+  it("starts at the name, not at the reading before it in the segment", () => {
+    const dia9 = [
+      { start: 969.04, text: " não" },
+      { start: 969.36, text: " subsistirá" },
+      { start: 974.54, text: " Provérbios" },
+      { start: 975.2, text: " 2," },
+      { start: 975.94, text: " 1" },
+      { start: 976.24, text: " a" },
+      { start: 976.58, text: " 5" },
+    ]
+    assert.equal(findTitle(dia9, 969.24, 978.14, 2)?.start, 974.19)
   })
 
   it("finds nothing for a heading that names no verses, or another chapter", () => {
-    assert.equal(findTitleEnd(words.slice(0, 2), 871.82, 875.8, 3), undefined)
-    assert.equal(findTitleEnd(words, 871.82, 875.8, 4), undefined)
+    assert.equal(findTitle(words.slice(0, 2), 871.82, 875.8, 3), undefined)
+    assert.equal(findTitle(words, 871.82, 875.8, 4), undefined)
+  })
+})
+
+describe("findReadingStart", () => {
+  // Dia 154: Whisper lost Marcos 1:1-3, its words timed from verse 4 on.
+  const segments = [
+    { start: 40.1, end: 49.2, text: " E agora a leitura." },
+    { start: 49.72, end: 50.76, text: " Marcos 1" },
+    { start: 52.84, end: 77.12, text: " João Batista apareceu no deserto" },
+  ]
+
+  it("begins after a heading said on its own", () => {
+    assert.equal(findReadingStart(segments, 49.76, 1), 52.84)
+  })
+
+  it("keeps the heading's start when it runs on into the text", () => {
+    const runOn = [{ start: 49.72, text: " Marcos 1 Princípio do Evangelho" }]
+    assert.equal(findReadingStart(runOn, 49.76, 1), 49.76)
+  })
+
+  it("keeps the heading's start for another chapter's number", () => {
+    assert.equal(findReadingStart(segments, 49.76, 2), 49.76)
   })
 })

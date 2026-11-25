@@ -62,7 +62,8 @@ const matchWords = (expected: string[], spoken: string[]): Int32Array => {
  * the episode: the spoken words are lined up with the chapter's text, and a
  * verse starts where its first word in a run of two matches was said (less a
  * word's time for each word before it). Verses with no such run are placed
- * between their neighbours by word count. Null when too few verses anchor to
+ * between their neighbours by word count (the first ones from `readFrom`).
+ * Null when too few verses anchor to
  * follow the reading verse by verse.
  */
 export const alignVerses = (
@@ -70,6 +71,9 @@ export const alignVerses = (
   verses: VerseText[],
   start: number,
   end: number,
+  // Where the reading's words begin, after its heading («Marcos 1»): verses
+  // before the first one heard are placed from here, not from the heading.
+  readFrom = start,
 ): { times: [number, number][]; anchored: number } | null => {
   const read = verses.filter((verse) => verse.number > 0)
   const expected: Token[] = read.flatMap((verse, index) =>
@@ -128,7 +132,7 @@ export const alignVerses = (
       let after = v + 1
       while (after < read.length && anchors[after] === undefined) after++
       const fromWord = before >= 0 ? firstWord[before] : 0
-      const fromTime = before >= 0 ? (anchors[before] as number) : start
+      const fromTime = before >= 0 ? (anchors[before] as number) : readFrom
       const toWord = after < read.length ? firstWord[after] : expected.length
       const toTime = after < read.length ? (anchors[after] as number) : end
       const share = (firstWord[v] - fromWord) / Math.max(1, toWord - fromWord)
