@@ -16,7 +16,7 @@ import {
   findChapterEnd,
   findChapterOpening,
   findChapterStarts,
-  findTitleEnd,
+  findTitle,
   parseReadings,
   type Reading,
   type Segment,
@@ -258,7 +258,8 @@ type Timing = {
   end: number | null
   /** [first, last] verse, when only part of the chapter is read. */
   range?: [number, number]
-  /** Then, where the heading's chapter name ends (before "1 a 4"). */
+  /** Then, where the heading's chapter name starts and ends (before "1 a 4"). */
+  titleStart?: number
   titleEnd?: number
   verses?: [number, number][]
 }
@@ -356,9 +357,9 @@ const timeReading = async (
   else if (aligned.anchored < total * 0.6)
     report(`${bookId} ${chapter} ${aligned.anchored}/${total} anchored`)
   const firstVerse = aligned?.times[0]?.[1]
-  const titleEnd =
+  const named =
     range && start !== undefined && firstVerse !== undefined
-      ? findTitleEnd(transcript.words, start, firstVerse, chapter)
+      ? findTitle(transcript.words, start, firstVerse, chapter)
       : undefined
   const timing: Timing = {
     day,
@@ -367,7 +368,7 @@ const timeReading = async (
     start: start ?? null,
     end: end ?? null,
     ...(range && { range }),
-    ...(titleEnd !== undefined && { titleEnd }),
+    ...(named && { titleStart: named.start, titleEnd: named.end }),
     ...(aligned && { verses: aligned.times }),
   }
   const key = `${bookId}/${chapter}`

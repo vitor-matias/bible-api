@@ -337,25 +337,40 @@ export const findChapterEnd = (
 }
 
 /**
- * Where a heading's chapter name ends, when the day's verses follow it
- * ("Provérbios 3, 1 a 4"): just before the word after the chapter's number.
- * Undefined when the heading names no verses or isn't in the words.
+ * Where a heading's chapter name is said, when the day's verses follow it
+ * ("Provérbios 3, 1 a 4"): from just before the book's name to just before
+ * the first verse's number. Found from the first verse back: the chapter's
+ * number with a name before it and a number after. The segment the heading
+ * starts in can begin seconds earlier (the reading before, the jingle) or,
+ * heard as "1 a 7", after the name: so not from it. Undefined when the
+ * heading names no verses or isn't in the words.
  */
-export const findTitleEnd = (
+export const findTitle = (
   words: { start: number; text: string }[],
   start: number,
   firstVerse: number,
   chapter: number,
-): number | undefined => {
+): { start: number; end: number } | undefined => {
   const heading = words.filter(
-    (word) => word.start >= start - 0.5 && word.start < firstVerse,
+    (word) => word.start >= start - 8 && word.start < firstVerse,
   )
-  const number = heading.findIndex(
-    (word) => normalize(word.text) === String(chapter),
-  )
-  const next = number < 0 ? undefined : heading[number + 1]
-  if (!next) return undefined
-  // A breath before the next word: its time marks a moment into it.
-  const end = Math.max(heading[number].start + 0.3, next.start - 0.15)
-  return Math.round(end * 100) / 100
+  const isNumber = (word?: { text: string }) =>
+    !!word && /^\d+$/.test(normalize(word.text))
+  for (let i = heading.length - 2; i > 0; i--) {
+    const [name, number, next] = heading.slice(i - 1, i + 2)
+    if (
+      normalize(number.text) !== String(chapter) ||
+      isNumber(name) ||
+      !isNumber(next)
+    ) {
+      continue
+    }
+    const round = (seconds: number) => Math.round(seconds * 100) / 100
+    // A word's time marks a moment into it: a breath before each.
+    return {
+      start: round(name.start - 0.35),
+      end: round(Math.max(number.start + 0.3, next.start - 0.15)),
+    }
+  }
+  return undefined
 }
