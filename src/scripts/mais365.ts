@@ -373,6 +373,49 @@ const timeReading = async (
   }
 }
 
+/** The start of the last reading placed before the i-th, or 0. */
+const lastStartBefore = (starts: (number | undefined)[], i: number): number => {
+  for (let j = i - 1; j >= 0; j--) {
+    const start = starts[j]
+    if (start !== undefined) return start
+  }
+  return 0
+}
+
+/**
+ * Chapters read without a heading (straight on from the one before): where
+ * their first verse is said, between the readings around them.
+ */
+const placeUnheaded = async (
+  day: number,
+  readings: Reading[],
+  starts: (number | undefined)[],
+  segments: Segment[],
+  run: Run,
+): Promise<void> => {
+  for (const [i, reading] of readings.entries()) {
+    // The first may be placed after the announcement's sentence, which can
+    // end after the reading began: its opening words, if said sooner.
+    if (starts[i] !== undefined && i > 0) continue
+    const from = lastStartBefore(starts, i)
+    const to = starts.slice(i + 1).find((s) => s !== undefined)
+    const opening = (await chapterVerses(reading.bookId, reading.chapter)).find(
+      (verse) =>
+        verse.number > 0 &&
+        (!reading.verses || verse.number >= reading.verses[0]),
+    )
+    const found = findChapterOpening(segments, from, to, opening?.text ?? "")
+    const before = starts[i]
+    if (found === undefined || (before !== undefined && before <= found))
+      continue
+    starts[i] = found
+    if (before === undefined)
+      run.problems.push(
+        `Dia ${day}: ${reading.bookId} ${reading.chapter} from its first verse`,
+      )
+  }
+}
+
 /** A day of the plan: its readings timed in its episode, then its reflection. */
 const timeDay = async (
   episode: Episode,
@@ -400,38 +443,8 @@ const timeDay = async (
     },
   }
   const starts = findChapterStarts(transcript.segments, readings, run.books)
-  // No heading (read straight on from the chapter before): where its first
-  // verse is said, between the readings around it.
-  for (const [i, reading] of readings.entries()) {
-    // The first may be placed after the announcement's sentence, which can
-    // end after the reading began: its opening words, if said sooner.
-    if (starts[i] !== undefined && i > 0) continue
-    const from =
-      starts
-        .slice(0, i)
-        .filter((s) => s !== undefined)
-        .at(-1) ?? 0
-    const to = starts.slice(i + 1).find((s) => s !== undefined)
-    const opening = (await chapterVerses(reading.bookId, reading.chapter)).find(
-      (verse) =>
-        verse.number > 0 &&
-        (!reading.verses || verse.number >= reading.verses[0]),
-    )
-    const found = findChapterOpening(
-      transcript.segments,
-      from,
-      to,
-      opening?.text ?? "",
-    )
-    const before = starts[i]
-    if (found === undefined || (before !== undefined && before <= found))
-      continue
-    starts[i] = found
-    if (before === undefined)
-      run.problems.push(
-        `Dia ${day}: ${reading.bookId} ${reading.chapter} from its first verse`,
-      )
-  }
+  await placeUnheaded(day, readings, starts, transcript.segments, run)
+
   const planned: PlanDay["readings"] = []
   for (const [i, reading] of readings.entries()) {
     const nextStart = starts.slice(i + 1).find((s) => s !== undefined)

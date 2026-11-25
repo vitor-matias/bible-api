@@ -264,8 +264,18 @@ export const findChapterOpening = (
 
 // Psalm 119's stanzas are headed by a Hebrew letter, which the text puts at
 // the end of the verse before ("… instruções! \n Het").
-const STANZA_LETTER =
-  /\n\s*(?:Alef|Bet|Guimel|Dalet|He|Vau|Zain|Het|Tet|Yod|Caf|Lamed|Mem|Nun|Samec|Ain|Phe|Sadé|Qof|Resh|Shin|Tau)\s*$/
+const STANZA_LETTERS = new Set(
+  "Alef Bet Guimel Dalet He Vau Zain Het Tet Yod Caf Lamed Mem Nun Samec Ain Phe Sadé Qof Resh Shin Tau".split(
+    " ",
+  ),
+)
+const withoutStanzaLetter = (verse: string): string => {
+  const lines = verse.trimEnd().split("\n")
+  const last = lines.at(-1)?.trim() ?? ""
+  return lines.length > 1 && STANZA_LETTERS.has(last)
+    ? lines.slice(0, -1).join("\n")
+    : verse
+}
 
 /**
  * Where a chapter's reading ends: the last transcript segment, after its
@@ -282,7 +292,7 @@ export const findChapterEnd = (
   // couldn't be placed.
   nextFollows = true,
 ): number | undefined => {
-  const words = normalize(lastVerse.replace(STANZA_LETTER, ""))
+  const words = normalize(withoutStanzaLetter(lastVerse))
     .split(" ")
     .filter(Boolean)
     // Whisper writes "Amém" for the text's "Ámen".
