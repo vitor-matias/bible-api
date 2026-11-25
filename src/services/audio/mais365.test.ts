@@ -5,6 +5,7 @@ import {
   findChapterEnd,
   findChapterOpening,
   findChapterStarts,
+  findTitleEnd,
   parseReadings,
 } from "./mais365"
 
@@ -398,5 +399,26 @@ describe("findChapterOpening", () => {
       findChapterOpening(segments, 384, 641, "Oração de um aflito que na sua"),
       undefined,
     )
+  })
+})
+
+describe("findTitleEnd", () => {
+  // Dia 14: "Provérbios 3, 1 a 4" before Provérbios 3:1.
+  const words = [
+    { start: 871.9, text: " Provérbios" },
+    { start: 872.8, text: " 3," },
+    { start: 873.6, text: " 1" },
+    { start: 873.9, text: " a" },
+    { start: 874.1, text: " 4" },
+    { start: 875.8, text: " Meu" },
+  ]
+
+  it("ends the chapter's name just before the day's verses are named", () => {
+    assert.equal(findTitleEnd(words, 871.82, 875.8, 3), 873.45)
+  })
+
+  it("finds nothing for a heading that names no verses, or another chapter", () => {
+    assert.equal(findTitleEnd(words.slice(0, 2), 871.82, 875.8, 3), undefined)
+    assert.equal(findTitleEnd(words, 871.82, 875.8, 4), undefined)
   })
 })

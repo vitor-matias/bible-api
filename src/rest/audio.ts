@@ -15,6 +15,10 @@ export type AudioEpisode = {
   // [first, last] verse, when only part of the chapter is read that day
   // (Provérbios 1:1-7).
   range?: [number, number]
+  // Read in part: where the chapter's name ends in its heading, before the
+  // day's verses are named ("Provérbios 3 | 1 a 4"), so a chapter heard
+  // whole can say its name and skip the rest.
+  titleEnd?: number
   // [verse, seconds into the episode] for each verse, where the reading lines
   // up well enough with the text to follow it verse by verse.
   verses?: [number, number][]

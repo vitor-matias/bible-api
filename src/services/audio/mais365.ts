@@ -335,3 +335,27 @@ export const findChapterEnd = (
   }
   return nextStart
 }
+
+/**
+ * Where a heading's chapter name ends, when the day's verses follow it
+ * ("Provérbios 3, 1 a 4"): just before the word after the chapter's number.
+ * Undefined when the heading names no verses or isn't in the words.
+ */
+export const findTitleEnd = (
+  words: { start: number; text: string }[],
+  start: number,
+  firstVerse: number,
+  chapter: number,
+): number | undefined => {
+  const heading = words.filter(
+    (word) => word.start >= start - 0.5 && word.start < firstVerse,
+  )
+  const number = heading.findIndex(
+    (word) => normalize(word.text) === String(chapter),
+  )
+  const next = number < 0 ? undefined : heading[number + 1]
+  if (!next) return undefined
+  // A breath before the next word: its time marks a moment into it.
+  const end = Math.max(heading[number].start + 0.3, next.start - 0.15)
+  return Math.round(end * 100) / 100
+}
