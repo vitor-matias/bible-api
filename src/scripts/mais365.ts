@@ -2,6 +2,7 @@
 // and where the reading starts. Runs locally (it needs ffmpeg and whisper-cli)
 // and re-runs cheaply, as transcripts are cached in .cache/mais365:
 //   npx tsc && node dist/scripts/mais365.js [--days 1-181 | --days 3,19]
+// Without --days it writes every day; with it, only those, keeping the rest.
 import { execFileSync, spawnSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
@@ -19,6 +20,8 @@ import {
   findChapterStarts,
   findReadingStart,
   findTitle,
+  losesWords,
+  mergePlan,
   parseReadings,
   pastHeadingPause,
   type Reading,
@@ -453,8 +456,13 @@ const alignReading = async (
   )
   const align = (words: TimedWord[]) =>
     alignVerses(words, verses, start, end, readFrom)
-  // Words lost to a loop in Whisper's pass: from a fresh one.
-  return align(transcript.words) ?? align(await transcript.freshWords())
+  const first = align(transcript.words)
+  // Words lost to a loop in Whisper's pass, or dropped from a stretch (Marcos
+  // 1:1-3, the one word kept from it timed 4.5 s early): from a fresh one,
+  // if it lines up more verses.
+  if (first && !losesWords(transcript.segments, start, end)) return first
+  const fresh = align(await transcript.freshWords())
+  return fresh && fresh.anchored > (first?.anchored ?? -1) ? fresh : first
 }
 
 /** One reading of a day: where it starts and ends, and its verses' times. */
@@ -704,7 +712,16 @@ const feedItems = (feed: string) =>
     .sort((a, b) => a.published - b.published)
 
 /** Writes the plan and the chapters' timings, and says what to check by ear. */
-const writeOut = (days: PlanDay[], { chapters, problems }: Run) => {
+const writeOut = (ran: PlanDay[], run: Run) => {
+  // A run over some days (--days 154) keeps the rest of the plan.
+  const { chapters, days } =
+    onlyDays && fs.existsSync(OUT)
+      ? mergePlan(JSON.parse(fs.readFileSync(OUT, "utf8")), {
+          chapters: run.chapters,
+          days: ran,
+        })
+      : { chapters: run.chapters, days: ran }
+  const { problems } = run
   for (const entries of Object.values(chapters))
     entries.sort((a, b) => a.day - b.day)
   days.sort((a, b) => a.day - b.day)

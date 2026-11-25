@@ -337,6 +337,55 @@ export const findChapterEnd = (
 }
 
 /**
+ * A run over some days laid over the plan before it: those days, and their
+ * chapters' timings, replaced; every other day kept as it was.
+ */
+export const mergePlan = <
+  Day extends { day: number },
+  Timing extends { day: number },
+>(
+  before: { chapters: Record<string, Timing[]>; days: Day[] },
+  run: { chapters: Record<string, Timing[]>; days: Day[] },
+): { chapters: Record<string, Timing[]>; days: Day[] } => {
+  const redone = new Set(run.days.map((day) => day.day))
+  const chapters: Record<string, Timing[]> = {}
+  // In the order they were, so a run over a day changes only its lines.
+  for (const [key, entries] of Object.entries(before.chapters)) {
+    chapters[key] = entries.filter((entry) => !redone.has(entry.day))
+  }
+  for (const [key, entries] of Object.entries(run.chapters)) {
+    chapters[key] = [...(chapters[key] ?? []), ...entries]
+  }
+  for (const [key, entries] of Object.entries(chapters)) {
+    if (entries.length === 0) delete chapters[key]
+  }
+  return {
+    chapters,
+    days: [...before.days.filter((day) => !redone.has(day.day)), ...run.days],
+  }
+}
+
+/**
+ * Whether Whisper dropped words in a reading: a segment over 10 s with
+ * fewer than 1.3 words a second, where reading runs at about 2.5 (Marcos
+ * 1:1-4, 24 s heard as 16 words). Names read slowly can look so too.
+ */
+export const losesWords = (
+  segments: Segment[],
+  start: number,
+  end: number,
+): boolean =>
+  segments.some(
+    (segment) =>
+      segment.end !== undefined &&
+      segment.start >= start - 0.6 &&
+      segment.end <= end + 0.5 &&
+      segment.end - segment.start > 10 &&
+      segment.text.trim().split(/\s+/).length / (segment.end - segment.start) <
+        1.3,
+  )
+
+/**
  * Verse 1 moved past the pause after a heading Whisper didn't hear on its
  * own («Marcos 16», «Êxodo 1»): placed from the heading, it was underlined
  * while the chapter was named. The heading is the sound before the first
