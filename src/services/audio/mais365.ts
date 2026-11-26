@@ -33,6 +33,7 @@ const ALIASES: Record<string, string[]> = {
   sir: ["benesira"],
   exo: ["a exodo", "a isodo", "autodo", "eis o do"],
   deu: ["patinomio"],
+  zec: ["ascarias"],
 }
 
 // Readers say "2º Livro dos Reis 25" or "Segundo o livro das Crónicas, 36"
@@ -171,43 +172,56 @@ export const findChapterStarts = (
   readings: Reading[],
   books: BookName[],
 ): (number | undefined)[] => {
-  let cursor = 0
-  const starts = readings.map(({ bookId, chapter, verses }) => {
+  // What a reading's heading can be heard as; `strict`, its name and number
+  // alone, not the shorter forms Whisper sometimes leaves.
+  const headingOf = ({ bookId, chapter, verses }: Reading, strict = false) => {
     const book = books.find((b) => b.id === bookId)
-    if (!book) return undefined
+    if (!book) return () => false
     const headings = namesOf(book).map((name) => `${name} ${chapter}`)
     // Read in part, its verses alone can be all Whisper keeps of the heading
     // ("Provérbios 1, 1 a 7" heard as "1 a 7").
     const range = verses && `${verses[0]} a ${verses[1]}`
-    const heading = (said: string) =>
+    return (said: string) =>
       headings.some(
         (h) =>
           said === h ||
           // Not the day's announcement listing it: "Jó 29 e 30", "3, 28 a 32".
           (said.startsWith(`${h} `) && !/^ [ea] \d/.test(said.slice(h.length))),
       ) ||
-      said === range ||
-      // The book's name dropped, the number alone: "41".
-      said === String(chapter)
-    for (let i = cursor; i < segments.length; i++) {
-      // A heading can straddle segments: "Levítico" | "24", "Cântico" |
-      // "dos Cânticos" | "8".
-      const joined = [1, 2, 3].map((size) =>
-        arabicTail(
-          asShortName(
-            normalize(
-              segments
-                .slice(i, i + size)
-                .map((s) => s.text)
-                .join(" "),
-            ),
+      (!strict &&
+        (said === range ||
+          // The book's name dropped, the number alone: "41".
+          said === String(chapter)))
+  }
+  // A heading can straddle segments: "Levítico" | "24", "Cântico" |
+  // "dos Cânticos" | "8".
+  const heardAt = (i: number) =>
+    [1, 2, 3].map((size) =>
+      arabicTail(
+        asShortName(
+          normalize(
+            segments
+              .slice(i, i + size)
+              .map((s) => s.text)
+              .join(" "),
           ),
         ),
-      )
+      ),
+    )
+  let cursor = 0
+  const starts = readings.map((reading, index) => {
+    const heading = headingOf(reading)
+    const later = readings.slice(index + 1).map((r) => headingOf(r, true))
+    for (let i = cursor; i < segments.length; i++) {
+      const joined = heardAt(i)
       if (joined.some(heading)) {
         cursor = i + 1
         return segments[i].start
       }
+      // A later reading's heading first: this one wasn't heard. Looking on
+      // took a mention in the commentary for it (Dia 262: "capítulo 16"),
+      // and every reading after it with it.
+      if (later.some((next) => joined.some(next))) return undefined
     }
     return undefined
   })
