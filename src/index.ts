@@ -1,4 +1,3 @@
-import * as fs from "node:fs"
 import * as path from "node:path"
 import cors from "cors"
 import express from "express"
@@ -12,7 +11,7 @@ import { EMBEDDING_FAILURES_KEY } from "./services/usfmImportService/storeChapte
 import { generateQueryEmbedding } from "./services/voyage/embeddings"
 import { createTaskPool } from "./util/concurrency"
 import { verifyEmbeddingIndex } from "./util/embeddingIndex"
-import { changedFiles, FILE_HASHES_KEY, hashFiles } from "./util/fileHashes"
+import { checkSourceFiles, FILE_HASHES_KEY } from "./util/fileHashes"
 import { flushDatabase } from "./util/flushDatabase"
 import {
   getImportState,
@@ -207,20 +206,6 @@ async function reembedFailedChapters(): Promise<void> {
   }
 }
 
-// readdirSync order is filesystem-dependent. Sorting keeps book numbering
-// (which feeds searchId) and introduction slug suffixes identical across
-// machines and reimports. A missing directory reads as empty, so stored data
-// keeps being served.
-function listSourceFiles(dir: string): string[] {
-  return (
-    (fs.existsSync(dir) ? fs.readdirSync(dir) : [])
-      .filter((file) => file.endsWith(".usfm"))
-      // By UTF-16 code unit, as a bare sort() would: a locale-aware compare
-      // could order names differently on machines with different locale data.
-      .sort((a, b) => Number(a > b) - Number(a < b))
-  )
-}
-
 // Loads the Bible data into Redis. Skips the destructive flush and costly
 // embedding regeneration when data is already stored and the source files hash
 // as they did then, unless started with --reimport. Resolves to the state of
@@ -250,37 +235,23 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
       return await existingDataOutcome(client)
     }
 
-    // An unreadable mount must not take down an API whose data is stored.
-    let files: string[]
-    let fileHashes: Record<string, string>
-    try {
-      files = listSourceFiles(filePath)
-      fileHashes = hashFiles(filePath, files)
-    } catch (error) {
-      return await abort(`cannot read PATH_TO_TEXTS (${filePath})`, error)
+    const source = checkSourceFiles(
+      filePath,
+      alreadyLoaded && !process.argv.includes("--reimport")
+        ? await client.hGetAll(FILE_HASHES_KEY)
+        : undefined,
+    )
+    if (source.action === "abort") {
+      return await abort(source.reason, source.error)
     }
-
-    // An empty or wrongly mounted directory must not be "imported": the flush
-    // would wipe the data for nothing.
-    if (files.length === 0) {
-      return await abort(`No .usfm files found in PATH_TO_TEXTS (${filePath})`)
-    }
-
-    if (alreadyLoaded && !process.argv.includes("--reimport")) {
-      const stored = await client.hGetAll(FILE_HASHES_KEY)
-      const changed = changedFiles(stored, fileHashes)
-      if (changed.length === 0) {
-        console.info(
-          "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
-        )
-        return await existingDataOutcome(client)
-      }
+    if (source.action === "skip") {
       console.info(
-        Object.keys(stored).length === 0
-          ? "No source file hashes stored yet; reimporting once to record them."
-          : `Source files changed since the last import (${changed.join(", ")}); reimporting.`,
+        "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
       )
+      return await existingDataOutcome(client)
     }
+    if (source.message) console.info(source.message)
+    const { files, fileHashes } = source
 
     // Only embeddings can rebuild what the flush removes, so check they can be
     // generated. A missing, rotated or out-of-quota key throws here.
