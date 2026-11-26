@@ -14,7 +14,7 @@
   "description": "",
   "dependencies": {
     "cors": "^2.8.6",
-    "dotenv": "^17.2.3",
+    "dotenv": "^18.0.10",
     "express": "^5.2.1",
     "express-rate-limit": "^8.2.1",
     "helmet": "^8.3.0",
@@ -27,8 +27,8 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/express-serve-static-core": "5.1.0",
-    "@types/node": "^25.0.3",
+    "@types/node": "^26.6.6",
     "prettier": "^3.9.6",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   }
 }

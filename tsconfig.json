@@ -9,6 +9,7 @@
       "esModuleInterop": true,
       "skipLibCheck": true,
       "outDir": "./dist",
+      "rootDir": "./src",
       "typeRoots": ["./src/@types", "./node_modules/@types"],
       "noImplicitAny": true,
     },
