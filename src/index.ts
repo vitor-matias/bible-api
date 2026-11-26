@@ -12,7 +12,7 @@ import { EMBEDDING_FAILURES_KEY } from "./services/usfmImportService/storeChapte
 import { generateQueryEmbedding } from "./services/voyage/embeddings"
 import { createTaskPool } from "./util/concurrency"
 import { verifyEmbeddingIndex } from "./util/embeddingIndex"
-import { FILE_HASHES_KEY, hashFiles, sameHashes } from "./util/fileHashes"
+import { changedFiles, FILE_HASHES_KEY, hashFiles } from "./util/fileHashes"
 import { flushDatabase } from "./util/flushDatabase"
 import {
   getImportState,
@@ -236,30 +236,28 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     await assertRedisModules(client)
 
     const alreadyLoaded = (await client.exists(IMPORT_COMPLETE_KEY)) === 1
-    const files = listSourceFiles(filePath)
-    const fileHashes = hashFiles(filePath, files)
-
-    if (alreadyLoaded && !process.argv.includes("--reimport")) {
-      if (sameHashes(await client.hGetAll(FILE_HASHES_KEY), fileHashes)) {
-        console.info(
-          "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
-        )
-        // Awaited, not returned bare: the finally below would otherwise quit
-        // the client before the lookup runs.
-        return await existingDataOutcome(client)
-      }
-      console.info("Source files changed since the last import; reimporting.")
-    }
 
     // Nothing is touched before these checks pass. With complete data already
-    // stored, refusing the reimport costs nothing, so it is kept and served.
+    // stored, refusing the import costs nothing, so it is kept and served.
     const abort = async (reason: string, error?: unknown) => {
       if (!alreadyLoaded) throw error ?? new Error(reason)
       console.error(
-        `ERROR: reimport aborted: ${reason}; the existing data is left in place and served.`,
+        `ERROR: import skipped: ${reason}; the existing data is left in place and served.`,
         ...(error ? [error] : []),
       )
+      // Awaited, not returned bare: the finally below would otherwise quit
+      // the client before the lookup runs.
       return await existingDataOutcome(client)
+    }
+
+    // An unreadable mount must not take down an API whose data is stored.
+    let files: string[]
+    let fileHashes: Record<string, string>
+    try {
+      files = listSourceFiles(filePath)
+      fileHashes = hashFiles(filePath, files)
+    } catch (error) {
+      return await abort(`cannot read PATH_TO_TEXTS (${filePath})`, error)
     }
 
     // An empty or wrongly mounted directory must not be "imported": the flush
@@ -268,13 +266,29 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
       return await abort(`No .usfm files found in PATH_TO_TEXTS (${filePath})`)
     }
 
+    if (alreadyLoaded && !process.argv.includes("--reimport")) {
+      const stored = await client.hGetAll(FILE_HASHES_KEY)
+      const changed = changedFiles(stored, fileHashes)
+      if (changed.length === 0) {
+        console.info(
+          "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
+        )
+        return await existingDataOutcome(client)
+      }
+      console.info(
+        Object.keys(stored).length === 0
+          ? "No source file hashes stored yet; reimporting once to record them."
+          : `Source files changed since the last import (${changed.join(", ")}); reimporting.`,
+      )
+    }
+
     // Only embeddings can rebuild what the flush removes, so check they can be
     // generated. A missing, rotated or out-of-quota key throws here.
     try {
       await generateQueryEmbedding("ping")
     } catch (error) {
       return await abort(
-        "embeddings cannot be generated (check VOYAGE_API_KEY)",
+        "embeddings cannot be generated (check VOYAGE_API_KEY, then restart to retry)",
         error,
       )
     }

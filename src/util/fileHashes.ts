@@ -19,14 +19,11 @@ export const hashFiles = (
     ]),
   )
 
-// A changed, added or removed file all count as a difference.
-export const sameHashes = (
+// Names of the files that were changed, added or removed.
+export const changedFiles = (
   stored: Record<string, string>,
   current: Record<string, string>,
-): boolean => {
-  const keys = Object.keys(current)
-  return (
-    keys.length === Object.keys(stored).length &&
-    keys.every((file) => stored[file] === current[file])
+): string[] =>
+  [...new Set([...Object.keys(stored), ...Object.keys(current)])].filter(
+    (file) => stored[file] !== current[file],
   )
-}
