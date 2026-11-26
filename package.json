@@ -12,7 +12,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "dotenv": "^17.2.3",
+    "dotenv": "^18.0.10",
     "express": "^5.2.1",
     "openai": "^6.15.0",
     "express-rate-limit": "^8.2.1",
