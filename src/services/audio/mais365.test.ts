@@ -20,6 +20,8 @@ const books: BookName[] = [
   { id: "pro", shortName: "Provérbios", chapterCount: 31 },
   { id: "est", shortName: "Ester", chapterCount: 10 },
   { id: "luk", shortName: "Lucas", chapterCount: 24 },
+  { id: "mat", shortName: "Mateus", chapterCount: 28 },
+  { id: "zec", shortName: "Zacarias", chapterCount: 14 },
   { id: "oba", shortName: "Abdias", chapterCount: 1 },
   { id: "2ki", shortName: "2 Reis", chapterCount: 25 },
   { id: "sng", shortName: "Cântico dos Cânticos", chapterCount: 8 },
@@ -181,6 +183,50 @@ describe("findChapterStarts", () => {
         books,
       ),
       [58.3, 254.4, 380, 632.3, 770.8],
+    )
+  })
+
+  // Dia 270: Whisper heard "Zacarias 8" as "Ascarias 8".
+  it("takes a heading Whisper misheard as it often does", () => {
+    assert.deepEqual(
+      findChapterStarts(
+        [
+          { start: 637.8, text: " Zacarias 7" },
+          { start: 762.3, text: " Ascarias 8" },
+        ],
+        [
+          { bookId: "zec", chapter: 7 },
+          { bookId: "zec", chapter: 8 },
+        ],
+        books,
+      ),
+      [637.8, 762.3],
+    )
+  })
+
+  // Dia 262: "Mateus 16" never heard; "capítulo 16" in the commentary after
+  // the readings was taken for it, and Mateus 17 and Provérbios 19 after it.
+  it("leaves a heading unheard once a later reading's comes first", () => {
+    const day262 = [
+      { start: 293.2, text: " Mateus 15" },
+      { start: 831.2, text: " Mateus 17" },
+      { start: 1064.7, text: " Provérbios 19" },
+      { start: 1148.4, text: " nestes capítulos" },
+      { start: 1411.8, text: " 16" },
+      { start: 1600, text: " Mateus 17 diz-nos" },
+    ]
+    assert.deepEqual(
+      findChapterStarts(
+        day262,
+        [
+          { bookId: "mat", chapter: 15 },
+          { bookId: "mat", chapter: 16 },
+          { bookId: "mat", chapter: 17 },
+          { bookId: "pro", chapter: 19, verses: [9, 12] },
+        ],
+        books,
+      ),
+      [293.2, undefined, 831.2, 1064.7],
     )
   })
 

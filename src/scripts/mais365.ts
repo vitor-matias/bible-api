@@ -51,10 +51,33 @@ const onlyDays =
       )
     : null
 
+// Where a reading starts, by day, when its heading is never said and its
+// first verse can't be found in the transcript (numbers spoken as numerals).
+const START_FIXES: Record<number, Record<string, number>> = {
+  // «No 18º ano…», straight on from Judite 1.
+  246: { "jdt 2": 655.6 },
+}
+
+// A reading's name as printed, and the verse its link opens at, where its
+// verses as stored would read wrongly (Ester 1,18 for Ester 1,1).
+const READING_NAMES: Record<
+  number,
+  Record<string, { label: string; verseStart: string }>
+> = {
+  274: { "est 1": { label: "Ester A", verseStart: "A1" } },
+  275: { "est 1": { label: "Ester 1", verseStart: "1" } },
+}
+
 // Descriptions that name a reading wrongly, by day: [as written, as read].
 // Dia 144–156 and 173 name the psalms of other days; the episodes read the
 // official plan's (ejns.pt/mais365, "Plano de leitura oficial").
 const DESCRIPTION_FIXES: Record<number, [string, string][]> = {
+  // Read: Provérbios 7 after 2 Crónicas 33, not the psalm named.
+  188: [["Salmo 147", "Provérbios 7"]],
+  // Ester's addition A is stored as Ester 1's first 17 verses, its 1,1 as
+  // the 18th: the verses as stored (READING_NAMES names them as printed).
+  274: [["Ester A", "Ester 1:1–17"]],
+  275: [["Ester 1–2", "Ester 1:18–39; Ester 2"]],
   144: [["Salmo 44", "Salmo 62"]],
   145: [["Salmo 45", "Salmo 64"]],
   146: [
@@ -636,6 +659,10 @@ const timeDay = async (
     pausesFrom: (from: number) => pausesFrom(guid, url, from),
   }
   const starts = findChapterStarts(transcript.segments, readings, run.books)
+  for (const [i, { bookId, chapter }] of readings.entries()) {
+    const fixed = START_FIXES[day]?.[`${bookId} ${chapter}`]
+    if (fixed !== undefined) starts[i] = fixed
+  }
   await placeUnheaded(day, readings, starts, transcript.segments, run)
 
   const planned: PlanDay["readings"] = []
@@ -648,8 +675,8 @@ const timeDay = async (
       run.problems.push(
         `Dia ${day}: ${reading.bookId} ${reading.chapter} from the end before`,
       )
-    planned.push(
-      await timeReading(
+    planned.push({
+      ...(await timeReading(
         episode,
         reading,
         start,
@@ -657,8 +684,9 @@ const timeDay = async (
         i + 1 >= readings.length || starts[i + 1] !== undefined,
         transcript,
         run,
-      ),
-    )
+      )),
+      ...READING_NAMES[day]?.[`${reading.bookId} ${reading.chapter}`],
+    })
   }
   const lastEnd = planned.at(-1)?.episode.end
   if (lastEnd == null) run.problems.push(`Dia ${day}: no reflection start`)
