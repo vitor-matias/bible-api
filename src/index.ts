@@ -244,7 +244,7 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
       // numbers its verses, so books must be stored in file order.
       for (const file of files) {
         console.log(file)
-        const bibleData = await readBook(path.join(filePath, file))
+        const bibleData = await readBook(path.join(filePath, file)) // NOSONAR
         await storeBook(client, bibleData, file, embeddings) // NOSONAR
       }
     } catch (error) {
