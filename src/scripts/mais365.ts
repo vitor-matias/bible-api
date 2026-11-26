@@ -3,15 +3,17 @@
 // and re-runs cheaply, as transcripts are cached in .cache/mais365:
 //   npx tsc && node dist/scripts/mais365.js [--days 1-181 | --days 3,19]
 // Without --days it writes every day; with it, only those, keeping the rest.
-import { execFileSync, spawnSync } from "node:child_process"
+import { execFile, execFileSync, spawnSync } from "node:child_process"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
+import { promisify } from "node:util"
 import {
   alignVerses,
   type TimedWord,
   type VerseText,
 } from "../services/audio/alignVerses"
+import { mapWithConcurrency } from "../util/concurrency"
 import { findTemplate } from "../services/audio/jingle"
 import {
   type BookName,
@@ -50,6 +52,17 @@ const onlyDays =
         }),
       )
     : null
+
+// Days worked on at once (--jobs N). Whisper runs on the GPU with 4 threads of
+// its own: two at a time keep it busy while the next episode downloads and
+// converts, and more mostly queue on the one GPU.
+const jobsArg = process.argv.indexOf("--jobs")
+const JOBS =
+  jobsArg > 0
+    ? Math.max(1, Number(process.argv[jobsArg + 1]) || 1)
+    : Math.max(1, Math.floor(os.availableParallelism() / 6))
+
+const execAsync = promisify(execFile)
 
 // Descriptions that name a reading wrongly, by day: [as written, as read].
 // Dia 144–156 and 173 name the psalms of other days; the episodes read the
@@ -197,7 +210,8 @@ const whisper = async (
     const response = await fetch(url)
     if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`)
     fs.writeFileSync(audio, Buffer.from(await response.arrayBuffer()))
-    execFileSync(FFMPEG, [
+    // Async: other days' downloads and runs go on meanwhile (--jobs).
+    await execAsync(FFMPEG, [
       "-v",
       "error",
       "-y",
@@ -209,7 +223,7 @@ const whisper = async (
       "1",
       wav,
     ])
-    execFileSync(
+    await execAsync(
       WHISPER,
       [
         "-m",
@@ -223,7 +237,8 @@ const whisper = async (
         "-f",
         wav,
       ],
-      { stdio: "ignore" },
+      // Its progress on stderr, a lot of it over a whole episode.
+      { maxBuffer: 64 * 1024 * 1024 },
     )
     fs.rmSync(audio)
     fs.rmSync(wav)
@@ -758,6 +773,7 @@ const main = async () => {
   const days: PlanDay[] = []
 
   let lastDay = 0
+  const toTime: Episode[] = []
   for (const { item, title } of feedItems(feed)) {
     const episode = episodeOf(item, title)
     if (!episode.day) {
@@ -767,12 +783,26 @@ const main = async () => {
     }
     lastDay = episode.day
     if (onlyDays && !onlyDays.has(episode.day)) continue
+    toTime.push(episode)
+  }
+  // JOBS days at once, each with its own timings and problems, joined in
+  // the feed's order: the output is the same whatever finishes first.
+  console.log(`${toTime.length} days, ${JOBS} at a time`)
+  const timed = await mapWithConcurrency(toTime, JOBS, async (episode) => {
+    const own: Run = { books, chapters: {}, problems: [] }
     try {
-      const day = await timeDay(episode, run)
-      if (day) days.push(day)
+      return { day: await timeDay(episode, own), own }
     } catch (error) {
-      run.problems.push(`Dia ${episode.day}: failed, ${String(error)}`)
+      own.problems.push(`Dia ${episode.day}: failed, ${String(error)}`)
+      return { day: undefined, own }
     }
+  })
+  for (const { day, own } of timed) {
+    if (day) days.push(day)
+    for (const [key, entries] of Object.entries(own.chapters)) {
+      run.chapters[key] = [...(run.chapters[key] ?? []), ...entries]
+    }
+    run.problems.push(...own.problems)
   }
   writeOut(days, run)
 }
