@@ -20,7 +20,10 @@ import { type RemindersSetup, setReminderEndpoints } from "./reminders"
 import { searchVersesController } from "./search"
 import { getVerseController, getVersesController } from "./verses"
 
-export default (app: express.Express, reminders?: RemindersSetup): void => {
+export default function setEndpoints(
+  app: express.Express,
+  reminders?: RemindersSetup,
+): void {
   // A single shared client is reused across requests.
   const getClient = makeClientGetter(() => ({ url: process.env.DB_URL }))
 

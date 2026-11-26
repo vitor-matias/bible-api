@@ -100,7 +100,10 @@ const isKey = (value: unknown, bytes: number) =>
 
 // The browsers' push services. Anything else would let a caller make this
 // server POST to a host of their choosing every day.
-const PUSH_HOSTS = ["fcm.googleapis.com", "updates.push.services.mozilla.com"]
+const PUSH_HOSTS = new Set([
+  "fcm.googleapis.com",
+  "updates.push.services.mozilla.com",
+])
 const PUSH_HOST_SUFFIXES = [
   ".push.apple.com",
   ".notify.windows.com",
@@ -121,7 +124,7 @@ export const isValidEndpoint = (value: unknown): value is string => {
     url.port === "" &&
     url.username === "" &&
     url.password === "" &&
-    (PUSH_HOSTS.includes(host) ||
+    (PUSH_HOSTS.has(host) ||
       PUSH_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix)))
   )
 }
