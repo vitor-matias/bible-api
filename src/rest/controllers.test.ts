@@ -291,6 +291,27 @@ describe("searchVersesController with an embedding service", () => {
     assert.equal(sent.status, 503)
   })
 
+  it("answers 200 with an empty page when nothing relevant matches", async () => {
+    // A healthy index has neighbours for "xqzvw", all far off, and the word
+    // is in no verse.
+    const { client } = createFakeRedis((index) =>
+      index === "idx:verseText"
+        ? { total: 0, documents: [] }
+        : {
+            total: 1,
+            documents: [{ id: "embedding:jhn:3:16", value: { score: "0.9" } }],
+          },
+    )
+    setImportState("ready")
+
+    const sent = await call(searchVersesController, client, {
+      query: { text: "xqzvw", semantic: "true", limit: "50" },
+    })
+
+    assert.equal(sent.status, 200)
+    assert.equal((sent.body as { total: number }).total, 0)
+  })
+
   it("answers 503 without embedding the query while the index is rebuilding", async () => {
     const { client } = createFakeRedis(undefined, () => ({ indexing: 1 }))
     setImportState("ready")

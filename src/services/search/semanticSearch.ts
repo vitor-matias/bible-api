@@ -95,7 +95,7 @@ export const semanticSearchVerses = async (
   search: string,
   page: number,
   pageSize: number,
-): Promise<VersePage> => {
+): Promise<VersePage | null> => {
   const offset = (page - 1) * pageSize
 
   // Defensive: the controller rejects out-of-window pages with a 400 so this
@@ -140,14 +140,9 @@ export const semanticSearchVerses = async (
     },
   )) as SearchReply
 
-  if (!results || results.total === 0) {
-    return {
-      verses: [],
-      total: 0,
-      currentPage: page,
-      totalPages: 0,
-    }
-  }
+  // A KNN over a complete index always has neighbours, so none means the
+  // index is not usable; null tells that apart from "nothing relevant".
+  if (!results || results.total === 0) return null
 
   const ranked = results.documents.map(
     (doc) => doc.value as unknown as EmbeddingDocument,

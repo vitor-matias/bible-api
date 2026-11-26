@@ -79,6 +79,13 @@ describe("capPerChapter", () => {
   })
 })
 
+// The search's page, failing the test where it answered null (no neighbours).
+const pageOf = async (...args: Parameters<typeof semanticSearchVerses>) => {
+  const page = await semanticSearchVerses(...args)
+  assert.ok(page, "expected a page, not null")
+  return page
+}
+
 describe("semanticSearchVerses", () => {
   let stub: Awaited<ReturnType<typeof startVoyageStub>>
 
@@ -132,8 +139,8 @@ describe("semanticSearchVerses", () => {
   it("caps each chapter at two verses before paging", async () => {
     const { client, calls } = await searchOver(ranked)
 
-    const first = await semanticSearchVerses(client, "amar o próximo", 1, 2)
-    const second = await semanticSearchVerses(client, "amar o próximo", 2, 2)
+    const first = await pageOf(client, "amar o próximo", 1, 2)
+    const second = await pageOf(client, "amar o próximo", 2, 2)
 
     assert.deepEqual(refs(first), ["rom 13:8", "rom 13:9"])
     assert.deepEqual(refs(second), ["mrk 12:31", "lev 19:18"])
@@ -158,7 +165,7 @@ describe("semanticSearchVerses", () => {
       number: 8,
     })
 
-    const page = await semanticSearchVerses(fake.client, "amar", 1, 10)
+    const page = await pageOf(fake.client, "amar", 1, 10)
 
     assert.deepEqual(refs(page), ["rom 13:8"])
   })
@@ -167,21 +174,16 @@ describe("semanticSearchVerses", () => {
     const many = Array.from({ length: 150 }, (_, i) => key("psa", i + 1, 1))
     const { client } = await searchOver(many)
 
-    const page = await semanticSearchVerses(client, "louvor", 1, 10)
+    const page = await pageOf(client, "louvor", 1, 10)
 
     assert.equal(page.total, KNN_MAX_RESULTS)
     assert.equal(page.totalPages, KNN_MAX_RESULTS / 10)
   })
 
-  it("returns an empty page when nothing matches", async () => {
+  it("returns null when the KNN finds no neighbours at all", async () => {
     const { client } = await searchOver([])
 
-    assert.deepEqual(await semanticSearchVerses(client, "nada", 1, 10), {
-      verses: [],
-      total: 0,
-      currentPage: 1,
-      totalPages: 0,
-    })
+    assert.equal(await semanticSearchVerses(client, "nada", 1, 10), null)
   })
 
   // "xqzvw" got 100 verses: a KNN search always answers. The best match's
@@ -220,7 +222,7 @@ describe("semanticSearchVerses", () => {
     it("answers nothing when the match is weak and no word is in the text", async () => {
       const { client, calls } = await scored(0.12, [])
 
-      assert.deepEqual(await semanticSearchVerses(client, "xqzvw", 1, 10), {
+      assert.deepEqual(await pageOf(client, "xqzvw", 1, 10), {
         verses: [],
         total: 0,
         currentPage: 1,
@@ -235,7 +237,7 @@ describe("semanticSearchVerses", () => {
     it("answers a weak match whose word is in the text («paz» peaks at 0.17)", async () => {
       const { client } = await scored(0.17, ["paz"])
 
-      const page = await semanticSearchVerses(client, "Paz", 1, 10)
+      const page = await pageOf(client, "Paz", 1, 10)
 
       assert.equal(page.total, 4)
     })
@@ -243,7 +245,7 @@ describe("semanticSearchVerses", () => {
     it("looks words up without accents, and skips the stopwords", async () => {
       const { client, calls } = await scored(0.15, ["fe"])
 
-      const page = await semanticSearchVerses(client, "a oração de fé", 1, 10)
+      const page = await pageOf(client, "a oração de fé", 1, 10)
 
       assert.equal(page.total, 4)
       // "a" and "de" are in every chapter; "fé" is short but a real search.
@@ -259,7 +261,7 @@ describe("semanticSearchVerses", () => {
     it("answers a strong match without looking at the words", async () => {
       const { client, calls } = await scored(MIN_SIMILARITY + 0.02, [])
 
-      const page = await semanticSearchVerses(client, "ansiedade", 1, 10)
+      const page = await pageOf(client, "ansiedade", 1, 10)
 
       assert.equal(page.total, 4)
       assert.equal(calls.filter((c) => c.index === "idx:verseText").length, 0)
@@ -268,7 +270,7 @@ describe("semanticSearchVerses", () => {
     it("answers as before when the index gives no score", async () => {
       const { client } = await searchOver(ranked)
 
-      const page = await semanticSearchVerses(client, "xqzvw", 1, 10)
+      const page = await pageOf(client, "xqzvw", 1, 10)
 
       assert.equal(page.total, 4)
     })
@@ -276,7 +278,7 @@ describe("semanticSearchVerses", () => {
     it("asks the index for each verse's distance", async () => {
       const { client, calls } = await scored(0.5, [])
 
-      await semanticSearchVerses(client, "amar", 1, 10)
+      await pageOf(client, "amar", 1, 10)
 
       assert.deepEqual((calls[0].options as { RETURN: string[] }).RETURN, [
         "score",
@@ -288,7 +290,7 @@ describe("semanticSearchVerses", () => {
     const { client, calls } = await searchOver(ranked)
     stub.requests.length = 0
 
-    const page = await semanticSearchVerses(client, "amar", 11, 10)
+    const page = await pageOf(client, "amar", 11, 10)
 
     assert.equal(page.total, 0)
     assert.equal(stub.requests.length, 0)
