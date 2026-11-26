@@ -81,8 +81,9 @@ const READING_NAMES: Record<
   number,
   Record<string, { label: string; verseStart: string }>
 > = {
-  274: { "est 1": { label: "Ester A", verseStart: "A1" } },
-  275: { "est 1": { label: "Ester 1", verseStart: "1" } },
+  // Addition A is printed inside Ester 1, before its 1,1: A1-17.
+  274: { "est 1": { label: "Ester 1,A1-17", verseStart: "A1" } },
+  275: { "est 1": { label: "Ester 1,1-22", verseStart: "1" } },
 }
 
 // Descriptions that name a reading wrongly, by day: [as written, as read].
