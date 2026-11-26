@@ -17,6 +17,18 @@ jobs:
       issues: read
       id-token: write
     steps:
+      # master keeps approvals across pushes (no stale-review dismissal), so an earlier approval
+      # is withdrawn before every review: only a run that ends in the approval step re-approves,
+      # and a review that errors, is skipped or is cancelled leaves the PR unapproved.
+      - name: Withdraw earlier approvals
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '.[] | select(.user.login == "github-actions[bot]" and .state == "APPROVED") | .id' | while read -r id; do
+            gh api -X PUT "repos/$REPO/pulls/$PR/reviews/$id/dismissals" -f message="Superseded by a new review." -f event=DISMISS > /dev/null
+          done
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 1
@@ -62,8 +74,10 @@ jobs:
       # A clean review approves the PR as github-actions[bot]: the action revokes the Claude app's token
       # before this step runs. That needs the repository setting "Allow GitHub Actions to create and
       # approve pull requests" (Settings > Actions > General). Only a full review counts: the
-      # step above has passed, the opus reviewers ran, this run posted no inline comment, and no thread
-      # Claude opened earlier is still unresolved. The approval names the commit it read.
+      # step above has passed, the opus reviewers ran and none was denied, this run posted no inline
+      # comment, and no review thread is unresolved, whoever opened it: the review skips issues
+      # already commented on, so an open thread from a person or another bot may be a bug it agreed
+      # with. The approval names the commit it read.
       - name: Approve when the review found nothing
         if: steps.claude.outputs.execution_file != ''
         env:
@@ -74,26 +88,21 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           used() { jq -e --arg t "$1" 'any(.[]; .type == "assistant" and any(.message.content[]?; .type == "tool_use" and (.name == $t or .input.model == $t)))' "$EXECUTION_FILE" > /dev/null; }
-          # An approval of an earlier commit must not outlive a review that found something.
-          withdraw() {
-            gh api "repos/$REPO/pulls/$PR/reviews" --paginate --jq '.[] | select(.user.login == "github-actions[bot]" and .state == "APPROVED") | .id' | while read -r id; do
-              gh api -X PUT "repos/$REPO/pulls/$PR/reviews/$id/dismissals" -f message="A later review found issues." -f event=DISMISS > /dev/null \
-                || echo "::warning::Could not withdraw the earlier approval."
-            done
-          }
           used opus || { echo "No approval: the bug reviewers did not run."; exit 0; }
-          ! used mcp__github_inline_comment__create_inline_comment || { echo "No approval: the review posted comments."; withdraw; exit 0; }
+          ! jq -e 'last | .permission_denials // [] | any(.tool_name == "Agent" or .tool_name == "Task")' "$EXECUTION_FILE" > /dev/null \
+            || { echo "No approval: a reviewer agent was denied."; exit 0; }
+          ! used mcp__github_inline_comment__create_inline_comment || { echo "No approval: the review posted comments."; exit 0; }
           # Read again now: the review took minutes, and the PR may have been closed or pushed to since.
           now=$(gh api "repos/$REPO/pulls/$PR" --jq '"\(.state) \(.head.sha)"') \
             || { echo "::warning::No approval: could not read the PR."; exit 0; }
           [ "$now" = "open $HEAD_SHA" ] || { echo "No approval: the PR is closed or has commits the review did not read."; exit 0; }
-          # Unresolved threads a bot named claude opened. More than one page of threads is not counted: no approval.
+          # Unresolved review threads, by any author. More than one page of threads is not counted: no approval.
           open=$(gh api graphql -F owner="${REPO%/*}" -F name="${REPO#*/}" -F pr="$PR" -f query='
             query($owner: String!, $name: String!, $pr: Int!) { repository(owner: $owner, name: $name) { pullRequest(number: $pr) {
-              reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved comments(first: 1) { nodes { author { __typename login } } } } } } } }' \
-            --jq '.data.repository.pullRequest.reviewThreads | if .pageInfo.hasNextPage then "many" else ([.nodes[] | select(.isResolved | not) | .comments.nodes[0].author | select(. != null and .__typename == "Bot" and .login == "claude")] | length) end') \
+              reviewThreads(first: 100) { pageInfo { hasNextPage } nodes { isResolved } } } } }' \
+            --jq '.data.repository.pullRequest.reviewThreads | if .pageInfo.hasNextPage then "many" else ([.nodes[] | select(.isResolved | not)] | length) end') \
             || { echo "::warning::No approval: could not read the PR's review threads."; exit 0; }
-          [ "$open" = 0 ] || { echo "No approval: unresolved Claude threads: $open."; withdraw; exit 0; }
+          [ "$open" = 0 ] || { echo "No approval: unresolved review threads: $open."; exit 0; }
           gh api "repos/$REPO/pulls/$PR/reviews" -f event=APPROVE -f commit_id="$HEAD_SHA" \
             -f body="Automated review of ${HEAD_SHA:0:7} found no issues. Each later push gets its own review." > /dev/null \
             || echo "::warning::The review found nothing but could not approve the PR."
