@@ -82,6 +82,11 @@ export const createFakeRedis = (
       value?: unknown,
     ) => hSet(key, typeof field === "string" ? { [field]: value } : field),
     hGetAll: async (key: string) => ({ ...(hashes.get(key) ?? {}) }),
+    hIncrBy: async (key: string, field: string, by: number) => {
+      const value = Number(hashes.get(key)?.[field] ?? 0) + by
+      hSet(key, { [field]: String(value) })
+      return value
+    },
     del: async (key: string) => del(key),
     sCard: async (key: string) => sets.get(key)?.size ?? 0,
     // One batch per call, matching only a trailing-"*" prefix pattern.

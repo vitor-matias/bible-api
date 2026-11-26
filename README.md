@@ -14,7 +14,10 @@ npm test
 The app can subscribe to a daily Web Push reminder for the +365 plan
 (`GET /v1/mais365/reminders/key`, `PUT` and `DELETE /v1/mais365/reminders`).
 Every minute the API sends each subscription its reminder once its local time
-has passed, unless that day was already read or reminded.
+has passed, unless that day was already read or reminded; one enabled after
+that day's time first hears from it the next day. Only endpoints on the
+browsers' push services (FCM, Apple, Mozilla, WNS) are accepted, and a
+subscription whose sends fail seven days running is dropped.
 
 It needs a VAPID key pair, generated once and kept:
 

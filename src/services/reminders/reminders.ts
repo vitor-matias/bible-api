@@ -77,13 +77,32 @@ const isKey = (value: unknown, bytes: number) =>
   BASE64URL.test(value) &&
   Buffer.from(value, "base64url").length === bytes
 
+// The browsers' push services. Anything else would let a caller make this
+// server POST to a host of their choosing every day.
+const PUSH_HOSTS = ["fcm.googleapis.com", "updates.push.services.mozilla.com"]
+const PUSH_HOST_SUFFIXES = [
+  ".push.apple.com",
+  ".notify.windows.com",
+  ".push.services.mozilla.com",
+]
+
 export const isValidEndpoint = (value: unknown): value is string => {
   if (typeof value !== "string" || value.length > 2048) return false
+  let url: URL
   try {
-    return new URL(value).protocol === "https:"
+    url = new URL(value)
   } catch {
     return false
   }
+  const host = url.hostname
+  return (
+    url.protocol === "https:" &&
+    url.port === "" &&
+    url.username === "" &&
+    url.password === "" &&
+    (PUSH_HOSTS.includes(host) ||
+      PUSH_HOST_SUFFIXES.some((suffix) => host.endsWith(suffix)))
+  )
 }
 
 // The zone's canonical name, so case variants of one zone ("europe/lisbon")
@@ -149,19 +168,20 @@ export const reminderId = (endpoint: string) =>
 
 // Resolves to false when the reminder is new and the cap is reached. The check
 // and the write are not atomic, so concurrent sign-ups can pass the cap by a
-// few; it bounds storage, it is not a quota. lastSent is not among the fields
-// written, so changing the time or marking a day read keeps it.
+// few; it bounds storage, it is not a quota. An update leaves lastSent alone,
+// so changing the time or marking a day read keeps it.
 export const saveReminder = async (
   client: RedisClient,
   reminder: Reminder,
+  now: Date = new Date(),
 ): Promise<boolean> => {
   const id = reminderId(reminder.endpoint)
-  if (
-    !(await client.sIsMember(IDS_KEY, id)) &&
-    (await client.sCard(IDS_KEY)) >= MAX_REMINDERS
-  ) {
-    return false
-  }
+  const isNew = !(await client.sIsMember(IDS_KEY, id))
+  if (isNew && (await client.sCard(IDS_KEY)) >= MAX_REMINDERS) return false
+  // Enabled after today's time: the first reminder comes tomorrow, not the
+  // minute after the user switched it on.
+  const local = localNow(reminder.timeZone, now)
+  const sentToday = isNew && local.time >= reminder.time
   await client
     .multi()
     .hSet(keyFor(id), {
@@ -172,6 +192,7 @@ export const saveReminder = async (
       timeZone: reminder.timeZone,
       readOn: reminder.readOn ?? "",
       next: JSON.stringify(reminder.next),
+      ...(sentToday ? { lastSent: local.date } : {}),
     })
     .sAdd(IDS_KEY, id)
     .exec()
@@ -222,11 +243,15 @@ export const isDue = (
   reminder.readOn !== local.date &&
   reminder.lastSent !== local.date
 
-/** In the Angular service worker's format, which shows it and opens the page on tap. */
+/**
+ * In the Angular service worker's format, which shows it and opens the page on
+ * tap. Introductions sit between days (6.5) and have no day number to show.
+ */
 export const reminderPayload = (next: Reminder["next"]) =>
   JSON.stringify({
     notification: {
-      title: next ? `+365 · Dia ${next.day}` : "+365",
+      title:
+        next && Number.isInteger(next.day) ? `+365 · Dia ${next.day}` : "+365",
       body: next ? next.title : "A leitura de hoje espera por si.",
       icon: "/icons/maskable_web_icon_x192.png",
       badge: "/icons/monochrome_icon_x512.png",
@@ -244,6 +269,8 @@ export const reminderPayload = (next: Reminder["next"]) =>
 const PUSH_TTL_SECONDS = 6 * 60 * 60
 const PUSH_TIMEOUT_MS = 10_000
 const SEND_CONCURRENCY = 16
+// Sends are tried once a day, so this many failures in a row is a week.
+export const MAX_FAILED_DAYS = 7
 
 const statusOf = (error: unknown) =>
   isObject(error) && typeof error.statusCode === "number"
@@ -287,10 +314,18 @@ export const sendDueReminders = async (
         reminderPayload(JSON.parse(stored.next)),
         { TTL: PUSH_TTL_SECONDS, timeout: PUSH_TIMEOUT_MS },
       )
+      if (stored.failures && stored.failures !== "0") {
+        await client.hSet(keyFor(id), "failures", "0")
+      }
     } catch (error) {
       const status = statusOf(error)
-      // The push service says the subscription is gone for good.
-      if (status === 404 || status === 410) {
+      // The push service says the subscription is gone for good, or it has
+      // failed every day for a week (a dead host, keys that cannot encrypt).
+      if (
+        status === 404 ||
+        status === 410 ||
+        (await client.hIncrBy(keyFor(id), "failures", 1)) >= MAX_FAILED_DAYS
+      ) {
         await client.multi().del(keyFor(id)).sRem(IDS_KEY, id).exec()
         return
       }

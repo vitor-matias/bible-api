@@ -1,7 +1,7 @@
 // A PUT /v1/mais365/reminders body that passes validation.
 export const validReminderBody = () => ({
   subscription: {
-    endpoint: "https://push.example.com/send/abc",
+    endpoint: "https://fcm.googleapis.com/fcm/send/abc",
     keys: {
       p256dh: Buffer.alloc(65, 4).toString("base64url"),
       auth: Buffer.alloc(16, 1).toString("base64url"),

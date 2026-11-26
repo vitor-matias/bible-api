@@ -49,6 +49,38 @@ describe("parseReminder", () => {
     assert.equal((parseReminder(lower) as Reminder).timeZone, "Europe/Lisbon")
   })
 
+  it("accepts only the browsers' push services", () => {
+    const withEndpoint = (endpoint: string) => ({
+      ...validBody(),
+      subscription: { ...validBody().subscription, endpoint },
+    })
+    for (const ok of [
+      "https://fcm.googleapis.com/fcm/send/abc",
+      "https://web.push.apple.com/QF3k",
+      "https://updates.push.services.mozilla.com/wpush/v2/abc",
+      "https://eu.push.services.mozilla.com/wpush/v2/abc",
+      "https://wns2-par02p.notify.windows.com/w/?token=abc",
+    ]) {
+      assert.equal(typeof parseReminder(withEndpoint(ok)), "object", ok)
+    }
+    for (const bad of [
+      "https://fcm.googleapis.com.evil.com/send",
+      "https://evilfcm.googleapis.com/send",
+      "https://push.apple.com.evil.com/x",
+      "https://evilpush.apple.com/x",
+      "https://notify.windows.com.evil.com/x",
+      "https://evil.com/fcm.googleapis.com",
+      "https://evil.com/?h=web.push.apple.com",
+      "https://fcm.googleapis.com@evil.com/x",
+      "https://user@fcm.googleapis.com/x",
+      "https://fcm.googleapis.com:8443/x",
+      "http://fcm.googleapis.com/x",
+      "https://example.com/push",
+    ]) {
+      assert.equal(typeof parseReminder(withEndpoint(bad)), "string", bad)
+    }
+  })
+
   it("refuses bad bodies", () => {
     const sub = validBody().subscription
     const bad: [string, unknown][] = [
@@ -61,7 +93,7 @@ describe("parseReminder", () => {
         {
           subscription: {
             ...sub,
-            endpoint: `https://a.b/${"x".repeat(2048)}`,
+            endpoint: `https://fcm.googleapis.com/${"x".repeat(2048)}`,
           },
         },
       ],
@@ -107,7 +139,9 @@ describe("saveReminder / deleteReminder", () => {
     const { client, hashes, sets } = createFakeRedis()
     const id = reminderId(endpoint)
 
-    assert.equal(await saveReminder(client, reminder()), true)
+    const early = new Date("2026-11-26T00:00:00Z")
+    assert.equal(await saveReminder(client, reminder(), early), true)
+    assert.equal(hashes.get(`reminder:${id}`)?.lastSent, undefined)
     hashes.set(`reminder:${id}`, {
       ...hashes.get(`reminder:${id}`),
       lastSent: "2026-11-26",
@@ -121,9 +155,32 @@ describe("saveReminder / deleteReminder", () => {
     assert.equal(stored?.lastSent, "2026-11-26")
 
     await deleteReminder(client, endpoint)
-    await deleteReminder(client, "https://push.example.com/unknown")
+    await deleteReminder(client, "https://fcm.googleapis.com/fcm/send/unknown")
     assert.equal(hashes.has(`reminder:${id}`), false)
     assert.equal(sets.get("reminders")?.size, 0)
+  })
+
+  it("counts a subscription created after today's time as sent today", async () => {
+    const { client, hashes } = createFakeRedis()
+    const key = `reminder:${reminderId(endpoint)}`
+    // 09:00 in Lisbon, past the 08:30 reminder.
+    const late = new Date("2026-11-26T09:00:00Z")
+    await saveReminder(client, reminder({ readOn: null }), late)
+    assert.equal(hashes.get(key)?.lastSent, "2026-11-26")
+
+    const calls: unknown[] = []
+    const send: Send = async (...args) => {
+      calls.push(args)
+    }
+    await sendDueReminders(client, send, late)
+    assert.equal(calls.length, 0)
+    await sendDueReminders(client, send, new Date("2026-11-27T08:30:00Z"))
+    assert.equal(calls.length, 1)
+
+    // An update past the time leaves the scheduler's lastSent as it is.
+    hashes.set(key, { ...hashes.get(key), lastSent: "2026-11-25" })
+    await saveReminder(client, reminder({ time: "07:00" }), late)
+    assert.equal(hashes.get(key)?.lastSent, "2026-11-25")
   })
 
   it("refuses new subscriptions at the cap but still updates existing ones", async () => {
@@ -132,7 +189,9 @@ describe("saveReminder / deleteReminder", () => {
     const ids = sets.get("reminders") as Set<string>
     for (let i = 1; i < MAX_REMINDERS; i++) ids.add(`filler${i}`)
 
-    const other = reminder({ endpoint: "https://push.example.com/other" })
+    const other = reminder({
+      endpoint: "https://fcm.googleapis.com/fcm/send/other",
+    })
     assert.equal(await saveReminder(client, other), false)
     assert.equal(await saveReminder(client, reminder({ time: "09:00" })), true)
   })
@@ -204,6 +263,12 @@ describe("reminderPayload", () => {
         },
       },
     )
+    // An introduction sits between days and has no number to show.
+    const intro = JSON.parse(
+      reminderPayload({ day: 6.5, title: "Introdução aos Patriarcas" }),
+    ).notification
+    assert.equal(intro.title, "+365")
+    assert.equal(intro.body, "Introdução aos Patriarcas")
     const plain = JSON.parse(reminderPayload(null)).notification
     assert.equal(plain.title, "+365")
     assert.equal(plain.body, "A leitura de hoje espera por si.")
@@ -213,7 +278,13 @@ describe("reminderPayload", () => {
 describe("sendDueReminders", () => {
   const setup = async (overrides: Partial<Reminder> = {}) => {
     const fake = createFakeRedis()
-    await saveReminder(fake.client, reminder({ readOn: null, ...overrides }))
+    // Saved before any reminder's time, so creating it does not count as
+    // already sent that day.
+    await saveReminder(
+      fake.client,
+      reminder({ readOn: null, ...overrides }),
+      new Date("2026-10-24T23:00:00Z"),
+    )
     const calls: Parameters<Send>[] = []
     let failWith: unknown
     const send: Send = async (...args) => {
@@ -280,7 +351,32 @@ describe("sendDueReminders", () => {
       // Tried once a day, not every minute.
       assert.equal(calls.length, 1)
       assert.equal(warn.mock.callCount(), 1)
-      assert.ok(!String(warn.mock.calls[0].arguments[0]).includes("push."))
+      assert.ok(!String(warn.mock.calls[0].arguments[0]).includes("fcm."))
+    } finally {
+      warn.mock.restore()
+    }
+  })
+
+  it("prunes a subscription after a week of failed days, reset by a success", async () => {
+    const { client, send, fail, hashes, sets } = await setup()
+    const warn = mock.method(console, "warn", () => {})
+    const day = (n: number) =>
+      new Date(`2026-11-${String(n).padStart(2, "0")}T09:00:00Z`)
+    try {
+      fail(new Error("encryption failed"))
+      for (let n = 1; n <= 6; n++) await sendDueReminders(client, send, day(n))
+      assert.equal(hashes.get(key)?.failures, "6")
+
+      fail(undefined)
+      await sendDueReminders(client, send, day(7))
+      assert.equal(hashes.get(key)?.failures, "0")
+
+      fail(new Error("encryption failed"))
+      for (let n = 8; n <= 13; n++) await sendDueReminders(client, send, day(n))
+      assert.ok(hashes.has(key))
+      await sendDueReminders(client, send, day(14))
+      assert.equal(hashes.has(key), false)
+      assert.equal(sets.get("reminders")?.size, 0)
     } finally {
       warn.mock.restore()
     }
