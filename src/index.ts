@@ -88,18 +88,6 @@ app.get("/health", (_req, res) => {
   res.status(isDataAvailable() ? 200 : 503).json({ status: getImportState() })
 })
 
-// Refuse data requests until the import finishes, so partially loaded data is
-// never served.
-app.use((_req, res, next) => {
-  if (!isDataAvailable()) {
-    return res.status(503).json({
-      error: "Bible data is not available yet",
-      status: getImportState(),
-    })
-  }
-  next()
-})
-
 setEndpoints(app)
 
 // Listen before the import runs: it can take many minutes, and a closed port
