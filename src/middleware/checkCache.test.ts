@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { fakeRequest, fakeResponse } from "../testing/fakeExpress"
 import { createFakeRedis } from "../testing/fakeRedis"
-import { checkCache } from "./checkCache"
+import { checkCache, clearCache } from "./checkCache"
 
 const URL = "/v1/gen/1"
 const OK = { ok: true }
@@ -82,5 +82,20 @@ describe("checkCache", () => {
     const { reachedHandler } = await serve(fake.client, 200, OK)
 
     assert.equal(reachedHandler, true)
+  })
+})
+
+describe("clearCache", () => {
+  it("drops cached responses and leaves the primary data", async () => {
+    const fake = createFakeRedis()
+    await serve(fake.client, 200, OK)
+    fake.strings.set("importComplete:v5", "1")
+    fake.hashes.set("fileHashes", { "a.usfm": "x" })
+
+    assert.equal(await clearCache(fake.client), 1)
+
+    assert.equal(fake.strings.has(`cache:${URL}`), false)
+    assert.equal(fake.strings.get("importComplete:v5"), "1")
+    assert.ok(fake.hashes.has("fileHashes"))
   })
 })

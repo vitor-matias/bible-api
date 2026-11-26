@@ -3,6 +3,7 @@ import cors from "cors"
 import express from "express"
 import helmet from "helmet"
 import { createClient } from "redis"
+import { clearCache } from "./middleware/checkCache"
 import setEndpoints from "./rest"
 import { planImport } from "./services/usfmImportService/planImport"
 import { readBook } from "./services/usfmImportService/readBook"
@@ -220,6 +221,9 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
   try {
     // Before anything can be flushed.
     await assertRedisModules(client)
+
+    const evicted = await clearCache(client)
+    if (evicted > 0) console.info(`Evicted ${evicted} cached response(s).`)
 
     const plan = await planImport(client, {
       filePath,
