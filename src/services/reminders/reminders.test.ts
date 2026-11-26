@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { createECDH, randomBytes } from "node:crypto"
 import { describe, it, mock } from "node:test"
 import webPush from "web-push"
 import { createFakeRedis } from "../../testing/fakeRedis"
@@ -44,6 +45,8 @@ describe("parseReminder", () => {
     // Introductions have fractional days.
     const intro = { ...validBody(), next: { day: 6.5, title: "Introdução" } }
     assert.equal(typeof parseReminder(intro), "object")
+    const lower = { ...validBody(), timeZone: "europe/lisbon" }
+    assert.equal((parseReminder(lower) as Reminder).timeZone, "Europe/Lisbon")
   })
 
   it("refuses bad bodies", () => {
@@ -288,6 +291,42 @@ describe("sendDueReminders", () => {
     sets.get("reminders")?.add("orphan")
     await sendDueReminders(client, send, new Date("2026-11-26T09:00:00Z"))
     assert.deepEqual([...(sets.get("reminders") ?? [])], [reminderId(endpoint)])
+  })
+})
+
+describe("web-push with the real library", () => {
+  it("builds the request a scheduler pass would send", () => {
+    // A real browser subscription: a P-256 public key and a 16-byte secret.
+    const ecdh = createECDH("prime256v1")
+    ecdh.generateKeys()
+    const body = validReminderBody()
+    body.subscription.keys = {
+      p256dh: ecdh.getPublicKey().toString("base64url"),
+      auth: randomBytes(16).toString("base64url"),
+    }
+    const parsed = parseReminder(body) as Reminder
+    const keys = webPush.generateVAPIDKeys()
+    assert.ok(
+      readVapidConfig({
+        VAPID_SUBJECT: "mailto:someone@example.com",
+        VAPID_PUBLIC_KEY: keys.publicKey,
+        VAPID_PRIVATE_KEY: keys.privateKey,
+      }),
+    )
+
+    const details = webPush.generateRequestDetails(
+      {
+        endpoint: parsed.endpoint,
+        keys: { p256dh: parsed.p256dh, auth: parsed.auth },
+      },
+      reminderPayload(parsed.next),
+      { TTL: 3600, timeout: 10_000 },
+    )
+
+    assert.equal(details.method, "POST")
+    assert.equal(details.endpoint, parsed.endpoint)
+    assert.match(String(details.headers.Authorization), /^vapid t=/)
+    assert.ok(details.body && details.body.length > 0)
   })
 })
 

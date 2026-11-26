@@ -86,13 +86,15 @@ export const isValidEndpoint = (value: unknown): value is string => {
   }
 }
 
-const isTimeZone = (value: unknown): value is string => {
-  if (typeof value !== "string" || value.length > 64) return false
+// The zone's canonical name, so case variants of one zone ("europe/lisbon")
+// share a cached formatter; undefined when Intl does not know it.
+const canonicalTimeZone = (value: unknown) => {
+  if (typeof value !== "string" || value.length > 64) return undefined
   try {
-    new Intl.DateTimeFormat("en", { timeZone: value })
-    return true
+    return new Intl.DateTimeFormat("en", { timeZone: value }).resolvedOptions()
+      .timeZone
   } catch {
-    return false
+    return undefined
   }
 }
 
@@ -116,7 +118,8 @@ export const parseReminder = (body: unknown): Reminder | string => {
     return "Invalid subscription keys"
   }
   if (typeof time !== "string" || !TIME.test(time)) return "Invalid time"
-  if (!isTimeZone(timeZone)) return "Invalid timeZone"
+  const zone = canonicalTimeZone(timeZone)
+  if (!zone) return "Invalid timeZone"
   if (readOn !== null && !isDate(readOn)) return "Invalid readOn"
   if (
     next !== null &&
@@ -135,7 +138,7 @@ export const parseReminder = (body: unknown): Reminder | string => {
     p256dh: keys.p256dh as string,
     auth: keys.auth as string,
     time,
-    timeZone,
+    timeZone: zone,
     readOn,
     next: next && { day: next.day as number, title: next.title as string },
   }
