@@ -13,7 +13,6 @@ import {
   type TimedWord,
   type VerseText,
 } from "../services/audio/alignVerses"
-import { mapWithConcurrency } from "../util/concurrency"
 import { findTemplate } from "../services/audio/jingle"
 import {
   type BookName,
@@ -29,6 +28,7 @@ import {
   type Reading,
   type Segment,
 } from "../services/audio/mais365"
+import { mapWithConcurrency } from "../util/concurrency"
 
 const FEED = "https://anchor.fm/s/fbcf8b30/podcast/rss"
 const API = process.env.API_ORIGIN ?? "https://biblia.capuchinhos.org"
