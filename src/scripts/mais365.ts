@@ -308,14 +308,19 @@ const chapterVerses = async (
   for (let attempt = 1; ; attempt++) {
     const response = await fetch(`${API}/v1/${bookId}/${chapter}`)
     if (response.ok) {
-      const { verses } = (await response.json()) as { verses: ApiVerse[] }
-      const texts = verses.map((verse) => ({
-        number: verse.number,
-        text: verse.text
-          .filter((t) => ["text", "quote", "paragraph"].includes(t.type))
-          .map((t) => t.text)
-          .join(" "),
-      }))
+      // Indexed by verse number, so a missing verse (often 0) is a null hole.
+      const { verses } = (await response.json()) as {
+        verses: (ApiVerse | null)[]
+      }
+      const texts = verses
+        .filter((v) => v != null)
+        .map((verse) => ({
+          number: verse.number,
+          text: verse.text
+            .filter((t) => ["text", "quote", "paragraph"].includes(t.type))
+            .map((t) => t.text)
+            .join(" "),
+        }))
       fs.mkdirSync(path.dirname(file), { recursive: true })
       fs.writeFileSync(file, JSON.stringify(texts))
       return texts
