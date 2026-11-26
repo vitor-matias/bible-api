@@ -12,6 +12,7 @@ import { EMBEDDING_FAILURES_KEY } from "./services/usfmImportService/storeChapte
 import { generateQueryEmbedding } from "./services/voyage/embeddings"
 import { createTaskPool } from "./util/concurrency"
 import { verifyEmbeddingIndex } from "./util/embeddingIndex"
+import { FILE_HASHES_KEY, hashFiles, sameHashes } from "./util/fileHashes"
 import { flushDatabase } from "./util/flushDatabase"
 import {
   getImportState,
@@ -207,8 +208,9 @@ async function reembedFailedChapters(): Promise<void> {
 }
 
 // Loads the Bible data into Redis. Skips re-importing (and the destructive
-// flush + costly embedding regeneration) when data is already present, unless
-// the process is started with --reimport. Resolves to the state of the
+// flush + costly embedding regeneration) when data is already present and the
+// source files hash as they did when it was stored, unless the process is
+// started with --reimport. Resolves to the state of the
 // semantic index; re-embedding failed chapters is left to the caller.
 async function loadFilesIntoMemory(): Promise<ImportOutcome> {
   const start = Date.now()
@@ -222,7 +224,27 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
 
     const alreadyLoaded = (await client.exists(IMPORT_COMPLETE_KEY)) === 1
 
-    if (alreadyLoaded && !reimport) {
+    const filePath = process.env.PATH_TO_TEXTS as string
+    console.log(filePath)
+    // readdirSync order is filesystem-dependent. Sorting keeps book numbering
+    // (which feeds searchId) and introduction slug suffixes identical across
+    // machines and reimports. A missing directory reads as empty so stored
+    // data keeps being served; the empty-directory guard below handles it.
+    const files = (fs.existsSync(filePath) ? fs.readdirSync(filePath) : [])
+      .filter((file) => file.endsWith(".usfm"))
+      // By UTF-16 code unit, as a bare sort() would: a locale-aware compare
+      // could order names differently on machines with different locale data.
+      .sort((a, b) => Number(a > b) - Number(a < b))
+    const fileHashes = hashFiles(filePath, files)
+
+    const filesChanged =
+      alreadyLoaded &&
+      !sameHashes(await client.hGetAll(FILE_HASHES_KEY), fileHashes)
+    if (filesChanged) {
+      console.info("Source files changed since the last import; reimporting.")
+    }
+
+    if (alreadyLoaded && !reimport && !filesChanged) {
       console.info(
         "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
       )
@@ -244,23 +266,11 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
       // nothing; carry on as a start without --reimport would and keep
       // serving it.
       console.error(
-        "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check VOYAGE_API_KEY and restart with --reimport to retry.",
+        "ERROR: reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check VOYAGE_API_KEY and restart with --reimport to retry.",
         error,
       )
       return await existingDataOutcome(client)
     }
-
-    const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
-    console.log(filePath)
-    // readdirSync order is filesystem-dependent. Sorting keeps book numbering
-    // (which feeds searchId) and introduction slug suffixes identical across
-    // machines and reimports.
-    const files = fs
-      .readdirSync(filePath)
-      .filter((file) => file.endsWith(".usfm"))
-      // By UTF-16 code unit, as a bare sort() would: a locale-aware compare
-      // could order names differently on machines with different locale data.
-      .sort((a, b) => Number(a > b) - Number(a < b))
 
     // An empty or wrongly mounted directory must not be "imported": the flush
     // below would wipe the data and the completion marker would make every
@@ -271,7 +281,7 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
         throw new Error(message)
       }
       console.error(
-        `ERROR: --reimport aborted: ${message}; the existing data is left in place and served.`,
+        `ERROR: reimport aborted: ${message}; the existing data is left in place and served.`,
       )
       return await existingDataOutcome(client)
     }
@@ -310,6 +320,7 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // blocking the marker: the primary data is complete, and those chapters
     // are re-embedded (now, in the background, and on later starts) instead of
     // flushing and reimporting everything.
+    await client.hSet(FILE_HASHES_KEY, fileHashes)
     await client.set(IMPORT_COMPLETE_KEY, "1")
 
     console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
