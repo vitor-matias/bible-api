@@ -1,13 +1,11 @@
-import type { createClient, SearchReply } from "redis"
-import { EMBEDDING_INDEX } from "../../util/embeddingIndex"
+import type { createClient } from "redis"
+import {
+  EMBEDDING_INDEX,
+  EMBEDDING_KEY_PREFIX,
+} from "../../util/embeddingIndex"
 import { jsonMGet } from "../../util/jsonMGet"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { generateQueryEmbedding } from "../voyage/embeddings"
-
-// The only field the query returns: the vector itself never leaves the index.
-type EmbeddingDocument = {
-  key: string
-}
 
 // KNN search is capped at this many results; results beyond this offset are unavailable.
 export const KNN_MAX_RESULTS = 100
@@ -69,7 +67,7 @@ export const semanticSearchVerses = async (
   // Always ask for the full window: a KNN query returns at most K documents, so
   // sizing K to the requested page would make `total` (and therefore
   // `totalPages`) shrink to that page and hide the rest of the results.
-  const results = (await client.ft.search(
+  const results = (await client.ft.searchNoContent(
     EMBEDDING_INDEX,
     `*=>[KNN ${KNN_CANDIDATES} @embedding $vec AS score]`,
     {
@@ -84,14 +82,13 @@ export const semanticSearchVerses = async (
         BY: "score",
         DIRECTION: "ASC",
       },
-      RETURN: ["key"],
       // RediSearch's default 500 ms timeout returns whatever it has found so
       // far, often nothing, with no error. A KNN over KNN_CANDIDATES regularly
       // takes longer than that in production, so it gets its own bound.
       TIMEOUT: KNN_TIMEOUT_MS,
       DIALECT: 2,
     },
-  )) as SearchReply
+  )) as unknown as { total: number; documents: string[] }
 
   if (!results || results.total === 0) {
     return {
@@ -105,8 +102,9 @@ export const semanticSearchVerses = async (
   // The cap is applied to the whole ranked window before paging, so pages
   // never overlap and `total` counts what can actually be paged through.
   const rankedKeys = capPerChapter(
+    // Ids only (no field loads): embedding:<b>:<c>:<v> -> verse:<b>:<c>:<v>.
     results.documents.map(
-      (doc) => (doc.value as unknown as EmbeddingDocument).key,
+      (id) => `verse:${id.slice(EMBEDDING_KEY_PREFIX.length)}`,
     ),
   ).slice(0, KNN_MAX_RESULTS)
   const totalResults = rankedKeys.length
