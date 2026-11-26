@@ -5,6 +5,11 @@ import helmet from "helmet"
 import { createClient } from "redis"
 import { clearCache } from "./middleware/checkCache"
 import setEndpoints from "./rest"
+import {
+  readVapidConfig,
+  remindersDbOptions,
+  startReminderScheduler,
+} from "./services/reminders/reminders"
 import { planImport } from "./services/usfmImportService/planImport"
 import { readBook } from "./services/usfmImportService/readBook"
 import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
@@ -20,6 +25,7 @@ import {
   isDataAvailable,
   setImportState,
 } from "./util/importState"
+import { makeClientGetter } from "./util/redisClient"
 import { assertRedisModules } from "./util/requireRedisModules"
 import { parseTrustProxy } from "./util/trustProxy"
 
@@ -88,7 +94,24 @@ app.get("/health", (_req, res) => {
   res.status(isDataAvailable() ? 200 : 503).json({ status: getImportState() })
 })
 
-setEndpoints(app)
+// +365 reminders run only with VAPID keys set and a database to keep them in;
+// otherwise their routes answer 503. The routes and the scheduler share one
+// client on that database.
+const startReminders = () => {
+  const vapid = readVapidConfig(process.env)
+  if (!vapid) return undefined
+  let db: ReturnType<typeof remindersDbOptions>
+  try {
+    db = remindersDbOptions(process.env.DB_URL, process.env.REMINDERS_DB_INDEX)
+  } catch (error) {
+    console.error(`Reminders disabled: ${(error as Error).message}`)
+    return undefined
+  }
+  const getClient = makeClientGetter(() => db)
+  startReminderScheduler(getClient)
+  return { vapid, getClient }
+}
+setEndpoints(app, startReminders())
 
 // Listen before the import runs: it can take many minutes, and a closed port
 // makes health checks fail and the container restart from scratch.
