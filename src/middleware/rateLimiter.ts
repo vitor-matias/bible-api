@@ -48,6 +48,18 @@ export const fullBookRateLimiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
 })
 
+// Reminder writes: a client sends one when enabling, changing the time or
+// marking a day read, so a few a minute is generous.
+export const remindersRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 20, // 20 requests per minute
+  message: {
+    error: "Too many requests, please try again later.",
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+})
+
 // Rate-limits the variants that fan out to getBook(..., true) — withChapters on
 // the books listing and withVerses on a single book. Both read every verse of
 // every chapter they touch; the plain listings are cheap and cached.

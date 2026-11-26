@@ -1,0 +1,330 @@
+import assert from "node:assert/strict"
+import { describe, it, mock } from "node:test"
+import webPush from "web-push"
+import { createFakeRedis } from "../../testing/fakeRedis"
+import { validReminderBody } from "../../testing/reminderFixture"
+import {
+  deleteReminder,
+  isDue,
+  localNow,
+  MAX_REMINDERS,
+  parseReminder,
+  type Reminder,
+  readVapidConfig,
+  reminderId,
+  reminderPayload,
+  remindersDbOptions,
+  type Send,
+  saveReminder,
+  sendDueReminders,
+} from "./reminders"
+
+const validBody = validReminderBody
+const endpoint = validBody().subscription.endpoint
+
+const reminder = (overrides: Partial<Reminder> = {}) => ({
+  ...(parseReminder(validBody()) as Reminder),
+  ...overrides,
+})
+
+describe("parseReminder", () => {
+  it("keeps only the validated fields of a good body", () => {
+    const body = { ...validBody(), extra: "dropped" }
+    assert.deepEqual(parseReminder(body), {
+      endpoint,
+      p256dh: body.subscription.keys.p256dh,
+      auth: body.subscription.keys.auth,
+      time: "08:30",
+      timeZone: "Europe/Lisbon",
+      readOn: "2026-11-25",
+      next: { day: 121, title: "Ciclo de violência" },
+    })
+    const empty = { ...validBody(), readOn: null, next: null }
+    assert.equal(typeof parseReminder(empty), "object")
+    // Introductions have fractional days.
+    const intro = { ...validBody(), next: { day: 6.5, title: "Introdução" } }
+    assert.equal(typeof parseReminder(intro), "object")
+  })
+
+  it("refuses bad bodies", () => {
+    const sub = validBody().subscription
+    const bad: [string, unknown][] = [
+      ["not an object", "x"],
+      ["array", []],
+      ["http endpoint", { subscription: { ...sub, endpoint: "http://a.b/c" } }],
+      ["junk endpoint", { subscription: { ...sub, endpoint: "not a url" } }],
+      [
+        "long endpoint",
+        {
+          subscription: {
+            ...sub,
+            endpoint: `https://a.b/${"x".repeat(2048)}`,
+          },
+        },
+      ],
+      ["no keys", { subscription: { endpoint } }],
+      [
+        "short p256dh",
+        { subscription: { ...sub, keys: { ...sub.keys, p256dh: "AAAA" } } },
+      ],
+      [
+        "non-base64url auth",
+        {
+          subscription: {
+            ...sub,
+            keys: { ...sub.keys, auth: "!!!!!!!!!!!!!!!!!!!!!!" },
+          },
+        },
+      ],
+      ["time 24:00", { time: "24:00" }],
+      ["time 8:30", { time: "8:30" }],
+      ["time number", { time: 830 }],
+      ["unknown zone", { timeZone: "Europe/Atlantis" }],
+      ["long zone", { timeZone: "x".repeat(100) }],
+      ["readOn Feb 30", { readOn: "2026-02-30" }],
+      ["readOn junk", { readOn: "yesterday" }],
+      ["readOn missing", { readOn: undefined }],
+      ["next.day NaN-ish", { next: { day: "121", title: "x" } }],
+      ["next.day infinite", { next: { day: Infinity, title: "x" } }],
+      ["next.title long", { next: { day: 1, title: "x".repeat(201) } }],
+      ["next missing", { next: undefined }],
+    ]
+    for (const [name, patch] of bad) {
+      const body =
+        typeof patch === "object" && patch && !Array.isArray(patch)
+          ? { ...validBody(), ...patch }
+          : patch
+      assert.equal(typeof parseReminder(body), "string", name)
+    }
+  })
+})
+
+describe("saveReminder / deleteReminder", () => {
+  it("upserts by endpoint hash, keeping lastSent, and deletes", async () => {
+    const { client, hashes, sets } = createFakeRedis()
+    const id = reminderId(endpoint)
+
+    assert.equal(await saveReminder(client, reminder()), true)
+    hashes.set(`reminder:${id}`, {
+      ...hashes.get(`reminder:${id}`),
+      lastSent: "2026-11-26",
+    })
+    await saveReminder(client, reminder({ time: "21:00", next: null }))
+
+    assert.deepEqual([...(sets.get("reminders") ?? [])], [id])
+    const stored = hashes.get(`reminder:${id}`)
+    assert.equal(stored?.time, "21:00")
+    assert.equal(stored?.next, "null")
+    assert.equal(stored?.lastSent, "2026-11-26")
+
+    await deleteReminder(client, endpoint)
+    await deleteReminder(client, "https://push.example.com/unknown")
+    assert.equal(hashes.has(`reminder:${id}`), false)
+    assert.equal(sets.get("reminders")?.size, 0)
+  })
+
+  it("refuses new subscriptions at the cap but still updates existing ones", async () => {
+    const { client, sets } = createFakeRedis()
+    await saveReminder(client, reminder())
+    const ids = sets.get("reminders") as Set<string>
+    for (let i = 1; i < MAX_REMINDERS; i++) ids.add(`filler${i}`)
+
+    const other = reminder({ endpoint: "https://push.example.com/other" })
+    assert.equal(await saveReminder(client, other), false)
+    assert.equal(await saveReminder(client, reminder({ time: "09:00" })), true)
+  })
+})
+
+describe("localNow / isDue", () => {
+  const at = (iso: string) => new Date(iso)
+
+  it("reads the wall clock in the reminder's zone", () => {
+    const now = at("2026-11-26T05:00:00Z")
+    assert.deepEqual(localNow("Europe/Lisbon", now), {
+      date: "2026-11-26",
+      time: "05:00",
+    })
+    assert.deepEqual(localNow("America/Los_Angeles", now), {
+      date: "2026-11-25",
+      time: "21:00",
+    })
+    assert.deepEqual(localNow("Asia/Tokyo", at("2026-11-26T15:30:00Z")), {
+      date: "2026-11-27",
+      time: "00:30",
+    })
+  })
+
+  it("is due from the time on, unless read or sent today", () => {
+    const local = { date: "2026-11-26", time: "08:30" }
+    const base = { time: "08:30", readOn: null }
+    assert.equal(isDue(base, local), true)
+    assert.equal(isDue(base, { ...local, time: "08:29" }), false)
+    // A missed minute (a restart) still sends later that day.
+    assert.equal(isDue(base, { ...local, time: "13:07" }), true)
+    assert.equal(isDue({ ...base, readOn: "2026-11-26" }, local), false)
+    assert.equal(isDue({ ...base, readOn: "2026-11-25" }, local), true)
+    assert.equal(isDue({ ...base, lastSent: "2026-11-26" }, local), false)
+    assert.equal(isDue({ ...base, lastSent: "2026-11-25" }, local), true)
+  })
+
+  it("sends right after a time skipped by the spring-forward change", () => {
+    // Lisbon, 28 March 2027: 01:00 jumps to 02:00, so 01:30 never happens.
+    const before = localNow("Europe/Lisbon", at("2027-03-28T00:59:00Z"))
+    const after = localNow("Europe/Lisbon", at("2027-03-28T01:00:00Z"))
+    const r = { time: "01:30", readOn: null }
+    assert.equal(after.time, "02:00")
+    assert.equal(isDue(r, before), false)
+    assert.equal(isDue(r, after), true)
+  })
+})
+
+describe("reminderPayload", () => {
+  it("is an ngsw notification that opens the plan", () => {
+    assert.deepEqual(
+      JSON.parse(reminderPayload({ day: 121, title: "Ciclo de violência" })),
+      {
+        notification: {
+          title: "+365 · Dia 121",
+          body: "Ciclo de violência",
+          icon: "/icons/maskable_web_icon_x192.png",
+          badge: "/icons/monochrome_icon_x512.png",
+          tag: "mais365",
+          lang: "pt-PT",
+          data: {
+            onActionClick: {
+              default: {
+                operation: "navigateLastFocusedOrOpen",
+                url: "/mais365",
+              },
+            },
+          },
+        },
+      },
+    )
+    const plain = JSON.parse(reminderPayload(null)).notification
+    assert.equal(plain.title, "+365")
+    assert.equal(plain.body, "A leitura de hoje espera por si.")
+  })
+})
+
+describe("sendDueReminders", () => {
+  const setup = async (overrides: Partial<Reminder> = {}) => {
+    const fake = createFakeRedis()
+    await saveReminder(fake.client, reminder({ readOn: null, ...overrides }))
+    const calls: Parameters<Send>[] = []
+    let failWith: unknown
+    const send: Send = async (...args) => {
+      calls.push(args)
+      if (failWith) throw failWith
+    }
+    return {
+      ...fake,
+      calls,
+      send,
+      fail: (error: unknown) => {
+        failWith = error
+      },
+    }
+  }
+  const key = `reminder:${reminderId(endpoint)}`
+
+  it("sends once a day, from the time on, and not when read", async () => {
+    const { client, calls, send } = await setup()
+
+    await sendDueReminders(client, send, new Date("2026-11-26T08:29:00Z"))
+    assert.equal(calls.length, 0)
+    await sendDueReminders(client, send, new Date("2026-11-26T08:30:00Z"))
+    await sendDueReminders(client, send, new Date("2026-11-26T08:31:00Z"))
+    assert.equal(calls.length, 1)
+
+    const [subscription, payload, options] = calls[0]
+    assert.equal(subscription.endpoint, endpoint)
+    assert.equal(JSON.parse(payload).notification.title, "+365 · Dia 121")
+    assert.ok(options.TTL && options.timeout)
+
+    await saveReminder(client, reminder({ readOn: "2026-11-27" }))
+    await sendDueReminders(client, send, new Date("2026-11-27T09:00:00Z"))
+    assert.equal(calls.length, 1)
+  })
+
+  it("does not repeat an hour the fall-back change plays twice", async () => {
+    const { client, calls, send } = await setup({ time: "01:30" })
+    // Lisbon, 25 October 2026: 02:00 goes back to 01:00, so 01:30 happens
+    // at 00:30 and again at 01:30 UTC.
+    await sendDueReminders(client, send, new Date("2026-10-25T00:30:00Z"))
+    await sendDueReminders(client, send, new Date("2026-10-25T01:30:00Z"))
+    assert.equal(calls.length, 1)
+  })
+
+  for (const statusCode of [404, 410]) {
+    it(`removes a subscription the push service answers ${statusCode}`, async () => {
+      const { client, send, fail, hashes, sets } = await setup()
+      fail(new webPush.WebPushError("gone", statusCode, {}, "", endpoint))
+      await sendDueReminders(client, send, new Date("2026-11-26T09:00:00Z"))
+      assert.equal(hashes.has(key), false)
+      assert.equal(sets.get("reminders")?.size, 0)
+    })
+  }
+
+  it("keeps the subscription on other failures, logging no endpoint", async () => {
+    const { client, send, fail, hashes, calls } = await setup()
+    const warn = mock.method(console, "warn", () => {})
+    try {
+      fail(new webPush.WebPushError("boom", 500, {}, "", endpoint))
+      await sendDueReminders(client, send, new Date("2026-11-26T09:00:00Z"))
+      await sendDueReminders(client, send, new Date("2026-11-26T09:01:00Z"))
+      assert.equal(hashes.get(key)?.lastSent, "2026-11-26")
+      // Tried once a day, not every minute.
+      assert.equal(calls.length, 1)
+      assert.equal(warn.mock.callCount(), 1)
+      assert.ok(!String(warn.mock.calls[0].arguments[0]).includes("push."))
+    } finally {
+      warn.mock.restore()
+    }
+  })
+
+  it("drops ids whose hash is gone", async () => {
+    const { client, send, sets } = await setup()
+    sets.get("reminders")?.add("orphan")
+    await sendDueReminders(client, send, new Date("2026-11-26T09:00:00Z"))
+    assert.deepEqual([...(sets.get("reminders") ?? [])], [reminderId(endpoint)])
+  })
+})
+
+describe("readVapidConfig / remindersDbOptions", () => {
+  it("needs all three settings, and valid ones", () => {
+    const keys = webPush.generateVAPIDKeys()
+    const env = {
+      VAPID_SUBJECT: "mailto:someone@example.com",
+      VAPID_PUBLIC_KEY: keys.publicKey,
+      VAPID_PRIVATE_KEY: keys.privateKey,
+    }
+    assert.equal(readVapidConfig(env)?.publicKey, keys.publicKey)
+    assert.equal(readVapidConfig({ ...env, VAPID_SUBJECT: "" }), undefined)
+    const error = mock.method(console, "error", () => {})
+    try {
+      assert.equal(
+        readVapidConfig({ ...env, VAPID_SUBJECT: "someone@example.com" }),
+        undefined,
+      )
+      assert.equal(
+        readVapidConfig({ ...env, VAPID_PUBLIC_KEY: "short" }),
+        undefined,
+      )
+    } finally {
+      error.mock.restore()
+    }
+  })
+
+  it("keeps reminders out of the database a reimport flushes", () => {
+    assert.equal(remindersDbOptions(undefined).url, "redis://localhost:6379/1")
+    assert.equal(
+      remindersDbOptions("redis://:pw@db.internal:6380").url,
+      "redis://:pw@db.internal:6380/1",
+    )
+    assert.equal(
+      remindersDbOptions("redis://localhost:6379/3").url,
+      "redis://localhost:6379/4",
+    )
+  })
+})
