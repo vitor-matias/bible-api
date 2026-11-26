@@ -2,8 +2,7 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import { fakeRequest, fakeResponse } from "../testing/fakeExpress"
 import {
-  loadAudioIndex,
-  loadPlan,
+  loadData,
   makeAudioController,
   makePlanController,
   makePlanDayController,
@@ -43,7 +42,7 @@ describe("audio controller", () => {
   })
 
   it("loads the committed index", () => {
-    const index = loadAudioIndex()
+    const index = loadData().chapters
     assert.ok(Object.keys(index).length > 0)
     for (const [key, episodes] of Object.entries(index)) {
       assert.match(key, /^[0-9a-z]{3}\/\d+$/)
@@ -101,7 +100,7 @@ describe("plan controllers", () => {
   })
 
   it("loads the committed plan, in order", () => {
-    const days = loadPlan()
+    const days = loadData().days
     assert.ok(days.length > 0)
     assert.deepEqual(
       days.map((d) => d.day),
