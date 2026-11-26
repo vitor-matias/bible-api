@@ -1,12 +1,12 @@
 import assert from "node:assert/strict"
 import { describe, it } from "node:test"
-import * as usfm from "usfm-js"
 import { extractBookIntro } from "./bookIntroUtils"
+import { parseUsfm } from "./readBook"
 
 // Parses a book whose header block is `intro`, the way the import does.
 const introOf = (intro: string) =>
   extractBookIntro(
-    usfm.toJSON(String.raw`\id GEN
+    parseUsfm(String.raw`\id GEN
 \toc1 Génesis
 ${intro}
 \c 1
@@ -81,6 +81,25 @@ describe("extractBookIntro", () => {
             ["A", "B", "C"],
           ],
         },
+      ],
+    )
+  })
+
+  // A span is dropped from the raw text, where it has no space: a cell's
+  // own text that starts with a hyphen and a digit stays whole.
+  it("keeps a cell's text that starts like a span", () => {
+    assert.deepEqual(introOf(String.raw`\tr \tc1 Ano \tc2 -586 queda`), [
+      { type: "introTable", rows: [["Ano", "-586 queda"]] },
+    ])
+  })
+
+  it("joins a paragraph's wrapped lines", () => {
+    assert.deepEqual(
+      introOf(`\\ip linha um\ncontinua aqui.\n\\is Secção\n\\ip dois`),
+      [
+        { type: "introParagraph", text: "linha um continua aqui." },
+        { type: "introSection", level: 1, text: "Secção" },
+        { type: "introParagraph", text: "dois" },
       ],
     )
   })

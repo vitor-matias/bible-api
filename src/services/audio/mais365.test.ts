@@ -614,6 +614,23 @@ describe("mergePlan", () => {
     ])
   })
 
+  // The full run merges into an empty plan: a day that failed partway
+  // leaves no chapter listing it, as the day itself isn't written.
+  it("leaves out a failed day's timings from a full run", () => {
+    const merged = mergePlan(
+      { chapters: {}, days: [] },
+      {
+        chapters: {
+          "mrk/1": [{ day: 154, start: 50 }],
+          "mrk/3": [{ day: 155, start: 60 }],
+        },
+        days: [{ day: 154 }],
+      },
+    )
+    assert.deepEqual(merged.chapters, { "mrk/1": [{ day: 154, start: 50 }] })
+    assert.deepEqual(merged.days, [{ day: 154 }])
+  })
+
   it("keeps a day that failed partway as it was", () => {
     const run = {
       chapters: { "mrk/3": [{ day: 155, start: 60 }] },

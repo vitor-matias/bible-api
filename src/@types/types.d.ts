@@ -11,8 +11,12 @@ type USFMBook = {
 }
 
 type USFMHeader = {
-  tag: string
+  // Absent on a line that continues the header before it: usfm-js hands it
+  // over as { type: "text", text }.
+  tag?: string
   content?: string
+  type?: string
+  text?: string
 }
 
 type USFMChapter = {

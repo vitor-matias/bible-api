@@ -91,9 +91,9 @@ const parseTableRow = (content: string): string[] => {
   // The first segment is whatever precedes the first cell marker. Empty cells
   // after it are kept: dropping them would shift every later cell into the
   // wrong column.
-  // usfm-js writes a span marker back with a space inside it (`\tc3-4` comes
-  // out as `\tc3 -4`), so the span end may follow whitespace.
-  const [leading, ...cells] = content.split(/\\t[hc][rc]?\d+(?:\s*-\d+)?\s*/)
+  // Column spans are dropped from the raw text first (parseUsfm): here a
+  // "-4" after a marker is the cell's own text.
+  const [leading, ...cells] = content.split(/\\t[hc][rc]?\d+\s*/)
   // A cell is a plain string, so it has nowhere to keep a note; only its
   // prose survives.
   const row = cells.map((cell) => cleanIntroText(cell).text)
@@ -176,12 +176,26 @@ const isUnhandledIntroTag = (tag: string): boolean => {
 /** Keeps only the headers that carry introduction content, with their parsed tag. */
 const collectIntroHeaders = (headers: USFMHeader[]): TaggedHeader[] => {
   const introHeaders: TaggedHeader[] = []
+  // The intro header just read, which a wrapped line continues.
+  let open: TaggedHeader | undefined
 
   for (const header of headers) {
-    const tag = parseIntroTag(header.tag)
-    if (tag) {
-      introHeaders.push({ header, tag })
-    } else if (isUnhandledIntroTag(header.tag)) {
+    // A paragraph that wraps in the source: its next line comes as a header
+    // of its own, untagged.
+    if (header.tag === undefined && header.type === "text") {
+      if (open && header.text) {
+        open.header = {
+          ...open.header,
+          content: `${open.header.content ?? ""} ${header.text}`,
+        }
+      }
+      continue
+    }
+    const tag = parseIntroTag(header.tag ?? "")
+    open = tag ? { header, tag } : undefined
+    if (open) {
+      introHeaders.push(open)
+    } else if (header.tag && isUnhandledIntroTag(header.tag)) {
       console.warn(
         `bookIntroUtils: ignoring unsupported intro marker \\${header.tag}`,
       )

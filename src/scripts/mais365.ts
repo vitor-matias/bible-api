@@ -727,14 +727,15 @@ const feedItems = (feed: string) =>
 
 /** Writes the plan and the chapters' timings, and says what to check by ear. */
 const writeOut = (ran: PlanDay[], run: Run) => {
-  // A run over some days (--days 154) keeps the rest of the plan.
-  const { chapters, days } =
+  // A run over some days (--days 154) keeps the rest of the plan. Either
+  // way only finished days' timings go out: a day that failed partway is
+  // left out of `days`, and its chapters must not list it either.
+  const { chapters, days } = mergePlan(
     onlyDays && fs.existsSync(OUT)
-      ? mergePlan(JSON.parse(fs.readFileSync(OUT, "utf8")), {
-          chapters: run.chapters,
-          days: ran,
-        })
-      : { chapters: run.chapters, days: ran }
+      ? JSON.parse(fs.readFileSync(OUT, "utf8"))
+      : { chapters: {}, days: [] },
+    { chapters: run.chapters, days: ran },
+  )
   const { problems } = run
   for (const entries of Object.values(chapters))
     entries.sort((a, b) => a.day - b.day)

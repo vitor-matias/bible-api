@@ -49,6 +49,11 @@ describe("introSlugFromFileName / isPeripheralBookId", () => {
     assert.equal(introSlugFromFileName("00_Intro_Génesis.usfm"), "genesis")
     // Nothing left after the prefixes: fall back to the whole name.
     assert.equal(introSlugFromFileName("00_Intro.usfm"), "00-intro")
+    // "Intro" only as its own word, not the start of a longer one.
+    assert.equal(
+      introSlugFromFileName("00_Introducao_Geral.usfm"),
+      "introducao-geral",
+    )
     // No slug-able character at all: hex of the name.
     assert.equal(introSlugFromFileName("__.usfm"), "5f5f")
   })

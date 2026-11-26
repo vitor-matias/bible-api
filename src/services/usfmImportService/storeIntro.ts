@@ -29,7 +29,8 @@ export const introSlugFromFileName = (fileName: string): string => {
   const base = fileName.replace(/\.usfm$/i, "")
   const withoutPrefix = base
     .replace(/^\d+[_-]*/, "")
-    .replace(/^intro[_-]*/i, "")
+    // "Intro" as its own word only: "Introducao_Geral" keeps its name.
+    .replace(/^intro(?:[_-]+|$)/i, "")
 
   // A name with no slug-able characters at all (e.g. only underscores, or a
   // non-Latin script) still needs an addressable, stable key.
