@@ -1,10 +1,11 @@
-import * as fs from "node:fs"
 import * as path from "node:path"
 import cors from "cors"
 import express from "express"
 import helmet from "helmet"
 import { createClient } from "redis"
+import { clearCache } from "./middleware/checkCache"
 import setEndpoints from "./rest"
+import { planImport } from "./services/usfmImportService/planImport"
 import { readBook } from "./services/usfmImportService/readBook"
 import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
 import { storeBook } from "./services/usfmImportService/storeBook"
@@ -12,6 +13,7 @@ import { EMBEDDING_FAILURES_KEY } from "./services/usfmImportService/storeChapte
 import { generateQueryEmbedding } from "./services/voyage/embeddings"
 import { createTaskPool } from "./util/concurrency"
 import { verifyEmbeddingIndex } from "./util/embeddingIndex"
+import { FILE_HASHES_KEY } from "./util/fileHashes"
 import { flushDatabase } from "./util/flushDatabase"
 import {
   getImportState,
@@ -206,13 +208,13 @@ async function reembedFailedChapters(): Promise<void> {
   }
 }
 
-// Loads the Bible data into Redis. Skips re-importing (and the destructive
-// flush + costly embedding regeneration) when data is already present, unless
-// the process is started with --reimport. Resolves to the state of the
-// semantic index; re-embedding failed chapters is left to the caller.
+// Loads the Bible data into Redis. Skips the destructive flush and costly
+// embedding regeneration when data is already stored and the source files hash
+// as they did then, unless started with --reimport. Resolves to the state of
+// the semantic index; re-embedding failed chapters is left to the caller.
 async function loadFilesIntoMemory(): Promise<ImportOutcome> {
   const start = Date.now()
-  const reimport = process.argv.includes("--reimport")
+  const filePath = process.env.PATH_TO_TEXTS as string
 
   const client = createImportClient()
   await client.connect()
@@ -220,61 +222,19 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // Before anything can be flushed.
     await assertRedisModules(client)
 
-    const alreadyLoaded = (await client.exists(IMPORT_COMPLETE_KEY)) === 1
+    const evicted = await clearCache(client)
+    if (evicted > 0) console.info(`Evicted ${evicted} cached response(s).`)
 
-    if (alreadyLoaded && !reimport) {
-      console.info(
-        "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
-      )
-      // Awaited, not returned bare: the finally below would otherwise quit the
-      // client before the lookup runs.
-      return await existingDataOutcome(client)
-    }
-
-    // The flush below is destructive and only embeddings can rebuild what it
-    // removes, so find out first, while nothing has been touched, that they
-    // can be generated. A missing, rotated or out-of-quota key throws here.
-    try {
-      await generateQueryEmbedding("ping")
-    } catch (error) {
-      if (!alreadyLoaded) {
-        throw error
-      }
-      // Complete data is already stored, so refusing the reimport costs
-      // nothing; carry on as a start without --reimport would and keep
-      // serving it.
-      console.error(
-        "ERROR: --reimport aborted because embeddings cannot be generated; the existing data is left in place and served. Check VOYAGE_API_KEY and restart with --reimport to retry.",
-        error,
-      )
-      return await existingDataOutcome(client)
-    }
-
-    const filePath = process.env.PATH_TO_TEXTS as string // Change this to the path of your USFM file
-    console.log(filePath)
-    // readdirSync order is filesystem-dependent. Sorting keeps book numbering
-    // (which feeds searchId) and introduction slug suffixes identical across
-    // machines and reimports.
-    const files = fs
-      .readdirSync(filePath)
-      .filter((file) => file.endsWith(".usfm"))
-      // By UTF-16 code unit, as a bare sort() would: a locale-aware compare
-      // could order names differently on machines with different locale data.
-      .sort((a, b) => Number(a > b) - Number(a < b))
-
-    // An empty or wrongly mounted directory must not be "imported": the flush
-    // below would wipe the data and the completion marker would make every
-    // later start skip the import even after the mount is fixed.
-    if (files.length === 0) {
-      const message = `No .usfm files found in PATH_TO_TEXTS (${filePath})`
-      if (!alreadyLoaded) {
-        throw new Error(message)
-      }
-      console.error(
-        `ERROR: --reimport aborted: ${message}; the existing data is left in place and served.`,
-      )
-      return await existingDataOutcome(client)
-    }
+    const plan = await planImport(client, {
+      filePath,
+      completeKey: IMPORT_COMPLETE_KEY,
+      reimport: process.argv.includes("--reimport"),
+      pingEmbeddings: () => generateQueryEmbedding("ping"),
+    })
+    // Awaited, not returned bare: the finally below would otherwise quit the
+    // client before the lookup runs.
+    if (!plan) return await existingDataOutcome(client)
+    const { files, fileHashes } = plan
 
     // flushDatabase also clears any stale completion marker and the record of
     // chapters whose embeddings failed.
@@ -283,18 +243,13 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // Books are stored one at a time, in order (their position numbers the
     // verses), while chapter embedding calls run behind them in the pool.
     const embeddings = createTaskPool(EMBEDDING_CONCURRENCY)
-    const storeFile = async (file: string) => {
-      console.log(file)
-      const bibleData = await readBook(path.join(filePath, file))
-      await storeBook(client, bibleData, file, embeddings)
-    }
     try {
-      const chunkSize = 1
-      for (let i = 0; i < files.length; i += chunkSize) {
-        const chunk = files.slice(i, i + chunkSize)
-        // Sequential on purpose: each book's position in the "books" list
-        // numbers its verses, so books must be stored in file order.
-        await Promise.all(chunk.map(storeFile)) // NOSONAR
+      // Sequential on purpose: each book's position in the "books" list
+      // numbers its verses, so books must be stored in file order.
+      for (const file of files) {
+        console.log(file)
+        const bibleData = await readBook(path.join(filePath, file)) // NOSONAR
+        await storeBook(client, bibleData, file, embeddings) // NOSONAR
       }
     } catch (error) {
       // Let in-flight embedding calls settle before the client is closed
@@ -309,7 +264,9 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // A chapter whose embedding call failed is recorded in Redis rather than
     // blocking the marker: the primary data is complete, and those chapters
     // are re-embedded (now, in the background, and on later starts) instead of
-    // flushing and reimporting everything.
+    // flushing and reimporting everything. The hashes go in first: a crash
+    // between the two writes leaves no marker, so the next start reimports.
+    await client.hSet(FILE_HASHES_KEY, fileHashes)
     await client.set(IMPORT_COMPLETE_KEY, "1")
 
     console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
