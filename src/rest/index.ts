@@ -7,8 +7,7 @@ import { validateQueryParams } from "../middleware/validateQueryParams"
 import { validateSearchParams } from "../middleware/validateSearchParams"
 import { getImportState, isDataAvailable } from "../util/importState"
 import {
-  loadAudioIndex,
-  loadPlan,
+  loadData,
   makeAudioController,
   makePlanController,
   makePlanDayController,
@@ -67,14 +66,15 @@ export default (app: express.Express): void => {
   // An in-memory lookup, so it is registered ahead of the import gate and the
   // Redis middleware (and of the verse route, whose shape would otherwise
   // swallow it): it keeps answering during an import or a Redis outage.
+  const data = loadData()
   app.get(
     "/v1/audio/:book/:chapter",
     validateQueryParams([]),
-    makeAudioController(loadAudioIndex()),
+    makeAudioController(data.chapters),
   )
   // The +365 plan, in memory as the index above, and so ahead of "/v1/:book"
   // and "/v1/:book/:chapter" too.
-  const plan = loadPlan()
+  const plan = data.days
   app.get("/v1/mais365", validateQueryParams([]), makePlanController(plan))
   app.get(
     "/v1/mais365/:day",
