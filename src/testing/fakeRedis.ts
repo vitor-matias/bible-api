@@ -5,7 +5,7 @@ type Client = ReturnType<typeof createClient>
 // An in-memory stand-in for the handful of Redis commands the import and
 // search code use, so their logic can be tested without a server. Only what
 // those callers need is modelled: JSON documents (whole-document or "$.field"
-// reads), strings, lists, sets, hashes written through MULTI, a key SCAN, and
+// reads), strings, lists, sets, hashes written through MULTI, a key SCAN, UNLINK, and
 // stubbed FT.SEARCH, FT.INFO and MODULE LIST.
 export const createFakeRedis = (
   search: (index: string, query: string, options: unknown) => unknown = () => ({
@@ -68,8 +68,12 @@ export const createFakeRedis = (
     // One batch per call, matching only a trailing-"*" prefix pattern.
     scanIterator: async function* ({ MATCH }: { MATCH: string }) {
       const prefix = MATCH.replace(/\*$/, "")
-      yield [...hashes.keys()].filter((key) => key.startsWith(prefix))
+      yield [...hashes.keys(), ...strings.keys()].filter((key) =>
+        key.startsWith(prefix),
+      )
     },
+    unlink: async (keys: string[]) =>
+      keys.filter((key) => strings.delete(key) || hashes.delete(key)).length,
     moduleList: async () => moduleList(),
     multi: () => {
       const queued: [string, Record<string, unknown>][] = []
@@ -88,6 +92,8 @@ export const createFakeRedis = (
     ft: {
       search: async (...args: Parameters<typeof search>) => search(...args),
       SEARCH: async (...args: Parameters<typeof search>) => search(...args),
+      searchNoContent: async (...args: Parameters<typeof search>) =>
+        search(...args),
       info: async (index: string) => info(index),
     },
   }

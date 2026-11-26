@@ -1,4 +1,5 @@
 import type { NextFunction, Request, Response } from "express"
+import type { createClient } from "redis"
 
 const CACHE_PREFIX = "cache:"
 const CACHE_TTL_SECONDS = 86400
@@ -67,4 +68,19 @@ export const checkCache = async (
     console.error(`Error in checkCache middleware: ${error}`)
     next()
   }
+}
+
+// Cached responses live in Redis and so outlive a restart, while the data
+// under them may have been reimported. Every start drops them.
+export const clearCache = async (
+  client: ReturnType<typeof createClient>,
+): Promise<number> => {
+  let removed = 0
+  for await (const keys of client.scanIterator({
+    MATCH: `${CACHE_PREFIX}*`,
+    COUNT: 1000,
+  })) {
+    if (keys.length > 0) removed += await client.unlink(keys)
+  }
+  return removed
 }

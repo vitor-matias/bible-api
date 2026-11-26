@@ -1,15 +1,17 @@
 import type { createClient, SearchReply } from "redis"
-import { EMBEDDING_INDEX } from "../../util/embeddingIndex"
+import {
+  EMBEDDING_INDEX,
+  EMBEDDING_KEY_PREFIX,
+} from "../../util/embeddingIndex"
 import { jsonMGet } from "../../util/jsonMGet"
 import { normalizeText } from "../../util/normalizeText"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { generateQueryEmbedding } from "../voyage/embeddings"
 import { escapeSearchPhrase } from "./searchVerses"
 
-// What the query returns: the verse's key and its cosine distance to the
-// query. The vector itself never leaves the index.
+// The only field the query returns: the KNN's cosine distance to the query,
+// which is computed, not loaded. The verse key comes from the document id.
 type EmbeddingDocument = {
-  key: string
   score?: string
 }
 
@@ -129,7 +131,7 @@ export const semanticSearchVerses = async (
         BY: "score",
         DIRECTION: "ASC",
       },
-      RETURN: ["key", "score"],
+      RETURN: ["score"],
       // RediSearch's default 500 ms timeout returns whatever it has found so
       // far, often nothing, with no error. A KNN over KNN_CANDIDATES regularly
       // takes longer than that in production, so it gets its own bound.
@@ -164,10 +166,12 @@ export const semanticSearchVerses = async (
 
   // The cap is applied to the whole ranked window before paging, so pages
   // never overlap and `total` counts what can actually be paged through.
-  const rankedKeys = capPerChapter(ranked.map((doc) => doc.key)).slice(
-    0,
-    KNN_MAX_RESULTS,
-  )
+  const rankedKeys = capPerChapter(
+    // embedding:<b>:<c>:<v> -> verse:<b>:<c>:<v>, so no hash field is loaded.
+    results.documents.map(
+      (doc) => `verse:${doc.id.slice(EMBEDDING_KEY_PREFIX.length)}`,
+    ),
+  ).slice(0, KNN_MAX_RESULTS)
   const totalResults = rankedKeys.length
   const totalPages = Math.ceil(totalResults / pageSize)
 

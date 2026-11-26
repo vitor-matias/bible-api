@@ -5,6 +5,13 @@ import { fullBookRateLimit, searchRateLimit } from "../middleware/rateLimiter"
 import { validateBooksParams } from "../middleware/validateBooksParams"
 import { validateQueryParams } from "../middleware/validateQueryParams"
 import { validateSearchParams } from "../middleware/validateSearchParams"
+import { getImportState, isDataAvailable } from "../util/importState"
+import {
+  loadData,
+  makeAudioController,
+  makePlanController,
+  makePlanDayController,
+} from "./audio"
 import { getBookController } from "./book"
 import { getBooksController } from "./books"
 import { getChapterController } from "./chapter"
@@ -55,6 +62,37 @@ export default (app: express.Express): void => {
     }
     return client
   }
+
+  // An in-memory lookup, so it is registered ahead of the import gate and the
+  // Redis middleware (and of the verse route, whose shape would otherwise
+  // swallow it): it keeps answering during an import or a Redis outage.
+  const data = loadData()
+  app.get(
+    "/v1/audio/:book/:chapter",
+    validateQueryParams([]),
+    makeAudioController(data.chapters),
+  )
+  // The +365 plan, in memory as the index above, and so ahead of "/v1/:book"
+  // and "/v1/:book/:chapter" too.
+  const plan = data.days
+  app.get("/v1/mais365", validateQueryParams([]), makePlanController(plan))
+  app.get(
+    "/v1/mais365/:day",
+    validateQueryParams([]),
+    makePlanDayController(plan),
+  )
+
+  // Refuse data requests until the import finishes, so partially loaded data is
+  // never served.
+  app.use((_req, res, next) => {
+    if (!isDataAvailable()) {
+      return res.status(503).json({
+        error: "Bible data is not available yet",
+        status: getImportState(),
+      })
+    }
+    next()
+  })
 
   app.use(async (_req, res, next) => {
     try {

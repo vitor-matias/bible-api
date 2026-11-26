@@ -79,7 +79,8 @@ export const storeChapter = async (
   // Sequential on purpose: each verse's number, the empty quote carried into
   // the next verse and the order the section outline is read in all depend on
   // storing the verses one at a time, in order.
-  for (const [index, [verseLabel, verse]] of verseEntries.entries()) {
+  for (const [index, [key, verse]] of verseEntries.entries()) {
+    const verseLabel = verse.label ?? key
     // If the previous verse ended with an empty quote block, apply its tag
     // to the first object of the current verse if it's plain text.
     // USFM authors sometimes place a quote tag (e.g. \q1) before a verse marker (\v)
@@ -110,21 +111,20 @@ export const storeChapter = async (
 
     if (verse.verseObjects.some((verseObject) => verseObject.tag === "ms")) {
       let objectsForVerse: USFMVerseObject[] = []
-      verseNumber = verseLabel === "front" ? 0 : verseNumber
+      verseNumber = key === "front" ? 0 : verseNumber
       let labelForVerse = verseLabel.includes("-") ? "" : verseNumber.toString()
 
       for (const verseObject of Object.values(verse.verseObjects)) {
         if (verseObject.tag === "va") {
           if (labelForVerse !== "") {
-            const verseData = /* NOSONAR */ await storeInOrder(
-              client,
-              bookCode,
+            const verseData = /* NOSONAR */ await storeInOrder(client, {
+              bookId: bookCode,
               bookNumber,
               chapterNumber,
               verseNumber,
-              labelForVerse,
-              objectsForVerse,
-            )
+              verseLabel: labelForVerse,
+              verseObjects: objectsForVerse,
+            })
             collectForEmbedding(versesData, verseData, verseNumber)
             objectsForVerse = []
 
@@ -137,52 +137,50 @@ export const storeChapter = async (
       }
 
       if (labelForVerse !== "") {
-        const verseData = /* NOSONAR */ await storeInOrder(
-          client,
-          bookCode,
+        const verseData = /* NOSONAR */ await storeInOrder(client, {
+          bookId: bookCode,
           bookNumber,
           chapterNumber,
           verseNumber,
-          labelForVerse,
-          objectsForVerse,
-        )
+          verseLabel: labelForVerse,
+          verseObjects: objectsForVerse,
+        })
         collectForEmbedding(versesData, verseData, verseNumber)
         verseNumber++
       }
-    } else if (verseLabel !== "front") {
-      const verseData = /* NOSONAR */ await storeInOrder(
-        client,
-        bookCode,
+    } else if (key !== "front") {
+      const verseData = /* NOSONAR */ await storeInOrder(client, {
+        bookId: bookCode,
         bookNumber,
         chapterNumber,
         verseNumber,
         verseLabel,
-        verse.verseObjects,
-      )
+        verseObjects: verse.verseObjects,
+        extra: verse.extra,
+      })
       collectForEmbedding(versesData, verseData, verseNumber)
       verseNumber++
     } else {
-      /* NOSONAR */ await storeInOrder(
-        client,
-        bookCode,
+      /* NOSONAR */ await storeInOrder(client, {
+        bookId: bookCode,
         bookNumber,
         chapterNumber,
-        0,
+        verseNumber: 0,
         verseLabel,
-        verse.verseObjects,
-      )
+        verseObjects: verse.verseObjects,
+        extra: verse.extra,
+      })
     }
   }
   if (chapter.front === null) {
-    await storeInOrder(
-      client,
-      bookCode,
+    await storeInOrder(client, {
+      bookId: bookCode,
       bookNumber,
       chapterNumber,
-      0,
-      "front",
-      [],
-    )
+      verseNumber: 0,
+      verseLabel: "front",
+      verseObjects: [],
+    })
   }
 
   // Record the chapter's highest verse number so getChapter can address the
