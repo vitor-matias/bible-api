@@ -118,4 +118,23 @@ describe("splitGreekAdditions", () => {
     const plain = usfm.toJSON("\\id RUT\n\\c 1\n\\v 1 Um.\n").chapters["1"]
     assert.equal(splitGreekAdditions(plain), plain)
   })
+
+  it("keeps a verse bridge in place in a chapter with an addition", () => {
+    const chapter = usfm.toJSON(String.raw`\id EST
+\c 5
+\v 1 Um.
+\v 2-3 Dois e três.
+\v 4 Quatro.
+\cp D
+\p
+\va 1\va* D um.
+`).chapters["5"]
+
+    assert.deepEqual(labels(splitGreekAdditions(chapter)), [
+      "1",
+      "2-3",
+      "4",
+      "1",
+    ])
+  })
 })

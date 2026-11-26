@@ -49,7 +49,8 @@ const cpLetter = (objects: USFMVerseObject[]) =>
 export const splitGreekAdditions = (chapter: USFMChapter): USFMChapter => {
   const keys = Object.keys(chapter)
     .filter((k) => k !== "front")
-    .sort((a, b) => Number(a) - Number(b))
+    // parseInt, not Number: a bridge "8-9" sorts as 8, where Number gives NaN.
+    .sort((a, b) => Number.parseInt(a, 10) - Number.parseInt(b, 10))
   const frontObjects = chapter.front?.verseObjects ?? []
   const opening = cpLetter(frontObjects)
   if (
