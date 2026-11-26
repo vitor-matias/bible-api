@@ -60,7 +60,11 @@ const jobsArg = process.argv.indexOf("--jobs")
 const JOBS =
   jobsArg > 0
     ? Math.max(1, Number(process.argv[jobsArg + 1]) || 1)
-    : Math.max(1, Math.floor(os.availableParallelism() / 6))
+    : // availableParallelism is Node 18.14+; cpus() before it.
+      Math.max(
+        1,
+        Math.floor((os.availableParallelism?.() ?? os.cpus().length) / 6),
+      )
 
 const execAsync = promisify(execFile)
 
