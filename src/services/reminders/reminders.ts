@@ -53,12 +53,33 @@ export const readVapidConfig = (
   return { subject, publicKey, privateKey }
 }
 
+// Redis and Valkey ship with databases 0 to 15.
+const DEFAULT_LAST_DB = 15
+
 // A reimport FLUSHDBs the data database, and subscriptions cannot be
-// re-imported, so they live in the next logical database along.
-export const remindersDbOptions = (dbUrl: string | undefined) => {
+// re-imported, so they live in another one: REMINDERS_DB_INDEX, or else the
+// next one along. Throws, naming both settings, when neither works, so the
+// caller can switch reminders off at startup instead of failing each request.
+export const remindersDbOptions = (
+  dbUrl: string | undefined,
+  dbIndex: string | undefined,
+) => {
   const url = new URL(dbUrl ?? "redis://localhost:6379")
   const dataDb = Number(url.pathname.slice(1) || 0)
-  url.pathname = `/${dataDb + 1}`
+  let db = dataDb + 1
+  if (dbIndex) {
+    db = Number(dbIndex)
+    if (!/^\d+$/.test(dbIndex) || db === dataDb) {
+      throw new Error(
+        `REMINDERS_DB_INDEX must be a database number other than DB_URL's (${dataDb}), got "${dbIndex}"`,
+      )
+    }
+  } else if (db > DEFAULT_LAST_DB) {
+    throw new Error(
+      `DB_URL uses database ${dataDb}, so reminders would need database ${db}, past the default ${DEFAULT_LAST_DB}; set REMINDERS_DB_INDEX to a free database`,
+    )
+  }
+  url.pathname = `/${db}`
   return { url: url.toString() }
 }
 
@@ -271,6 +292,7 @@ const PUSH_TIMEOUT_MS = 10_000
 const SEND_CONCURRENCY = 16
 // Sends are tried once a day, so this many failures in a row is a week.
 export const MAX_FAILED_DAYS = 7
+const CLAIM_TTL_SECONDS = 2 * 24 * 60 * 60
 
 const statusOf = (error: unknown) =>
   isObject(error) && typeof error.statusCode === "number"
@@ -304,6 +326,13 @@ export const sendDueReminders = async (
       )
     )
       return
+    // Claimed atomically, so two API processes sharing this database cannot
+    // both send the day's reminder; the key outlives the local day anywhere.
+    const claimed = await client.set(`reminder-sent:${id}:${local.date}`, "1", {
+      condition: "NX",
+      expiration: { type: "EX", value: CLAIM_TTL_SECONDS },
+    })
+    if (claimed === null) return
     await client.hSet(keyFor(id), "lastSent", local.date)
     try {
       await send(

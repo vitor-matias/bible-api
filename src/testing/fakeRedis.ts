@@ -55,7 +55,9 @@ export const createFakeRedis = (
     },
     get: async (key: string) => strings.get(key) ?? null,
     mGet: async (keys: string[]) => keys.map((key) => strings.get(key) ?? null),
-    set: async (key: string, value: string) => {
+    // NX is honoured; expiry is not modelled.
+    set: async (key: string, value: string, options?: { condition?: "NX" }) => {
+      if (options?.condition === "NX" && strings.has(key)) return null
       strings.set(key, value)
       return "OK"
     },

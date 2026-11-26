@@ -382,6 +382,16 @@ describe("sendDueReminders", () => {
     }
   })
 
+  it("sends once when two processes run a pass at the same moment", async () => {
+    const { client, calls, send } = await setup()
+    const now = new Date("2026-11-26T09:00:00Z")
+    await Promise.all([
+      sendDueReminders(client, send, now),
+      sendDueReminders(client, send, now),
+    ])
+    assert.equal(calls.length, 1)
+  })
+
   it("drops ids whose hash is gone", async () => {
     const { client, send, sets } = await setup()
     sets.get("reminders")?.add("orphan")
@@ -452,14 +462,41 @@ describe("readVapidConfig / remindersDbOptions", () => {
   })
 
   it("keeps reminders out of the database a reimport flushes", () => {
-    assert.equal(remindersDbOptions(undefined).url, "redis://localhost:6379/1")
+    const url = (dbUrl?: string, index?: string) =>
+      remindersDbOptions(dbUrl, index).url
+    assert.equal(url(), "redis://localhost:6379/1")
     assert.equal(
-      remindersDbOptions("redis://:pw@db.internal:6380").url,
+      url("redis://:pw@db.internal:6380"),
       "redis://:pw@db.internal:6380/1",
     )
+    assert.equal(url("redis://localhost:6379/3"), "redis://localhost:6379/4")
     assert.equal(
-      remindersDbOptions("redis://localhost:6379/3").url,
-      "redis://localhost:6379/4",
+      url("redis://localhost:6379/15", "7"),
+      "redis://localhost:6379/7",
+    )
+    assert.equal(
+      url("redis://localhost:6379/0", "03"),
+      "redis://localhost:6379/3",
+    )
+  })
+
+  it("refuses a database past the default range or the data's own", () => {
+    const names = /DB_URL.*REMINDERS_DB_INDEX|REMINDERS_DB_INDEX.*DB_URL/
+    assert.throws(
+      () => remindersDbOptions("redis://localhost:6379/15", undefined),
+      names,
+    )
+    assert.throws(
+      () => remindersDbOptions("redis://localhost:6379/2", "2"),
+      names,
+    )
+    assert.throws(
+      () => remindersDbOptions(undefined, "-1"),
+      /REMINDERS_DB_INDEX/,
+    )
+    assert.throws(
+      () => remindersDbOptions(undefined, "one"),
+      /REMINDERS_DB_INDEX/,
     )
   })
 })

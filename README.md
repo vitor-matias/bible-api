@@ -28,5 +28,8 @@ npx web-push generate-vapid-keys
 Set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` and `VAPID_SUBJECT` (a `mailto:` or
 `https:` contact) and restart. Without them the routes answer 503 and nothing is
 sent. Subscriptions are stored in the Redis database after `DB_URL`'s (`/1` for
-the default `/0`), so a reimport does not erase them, but they cannot be
-rebuilt either: keep Redis persistence on.
+the default `/0`), or in `REMINDERS_DB_INDEX` when set, so a reimport does not
+erase them, but they cannot be rebuilt either: keep Redis persistence on. If
+`DB_URL` uses database 15, set `REMINDERS_DB_INDEX`; otherwise the API logs an
+error at startup and leaves reminders off. Several API processes can share the
+database: each day's send is claimed atomically, so it goes out once.
