@@ -92,6 +92,8 @@ export const createFakeRedis = (
     ft: {
       search: async (...args: Parameters<typeof search>) => search(...args),
       SEARCH: async (...args: Parameters<typeof search>) => search(...args),
+      searchNoContent: async (...args: Parameters<typeof search>) =>
+        search(...args),
       info: async (index: string) => info(index),
     },
   }

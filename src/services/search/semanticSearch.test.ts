@@ -108,10 +108,9 @@ describe("semanticSearchVerses", () => {
       calls.push({ query, options: options as Options })
       return {
         total: keys.length,
-        documents: keys.map((verseKey) => ({
-          id: verseKey.replace("verse:", "embedding:"),
-          value: { key: verseKey },
-        })),
+        documents: keys.map((verseKey) =>
+          verseKey.replace("verse:", "embedding:"),
+        ),
       }
     })
     for (const verseKey of keys) {
@@ -144,6 +143,22 @@ describe("semanticSearchVerses", () => {
     assert.equal(calls[0].options.LIMIT.size, 1000)
     // Above RediSearch's 500 ms default, which ends a slow KNN with no results.
     assert.ok(calls[0].options.TIMEOUT > 500)
+  })
+
+  it("derives the verse key from the embedding id", async () => {
+    const fake = createFakeRedis(() => ({
+      total: 1,
+      documents: ["embedding:rom:13:8"],
+    }))
+    await fake.client.json.set("verse:rom:13:8", "$", {
+      bookId: "rom",
+      chapterNumber: 13,
+      number: 8,
+    })
+
+    const page = await semanticSearchVerses(fake.client, "amar", 1, 10)
+
+    assert.deepEqual(refs(page), ["rom 13:8"])
   })
 
   it("keeps the window at KNN_MAX_RESULTS after the cap", async () => {

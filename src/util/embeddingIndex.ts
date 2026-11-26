@@ -23,8 +23,9 @@ export const getEmbeddingIndexInfo = async (
   (await client.ft.info(EMBEDDING_INDEX)) as unknown as EmbeddingIndexInfo
 
 // Hashes, not JSON: a vector is stored as its raw float32 bytes (see
-// storeChapter). The "key" field is only returned by queries, never searched,
-// so it stays out of the schema.
+// storeChapter). The "key" field is no longer read by queries (the
+// verse key comes from the document id); it is still written so a rollback
+// works, and stays out of the schema.
 export const createEmbeddingIndex = (client: Client) =>
   client.ft.create(
     EMBEDDING_INDEX,
