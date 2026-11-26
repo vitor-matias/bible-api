@@ -168,19 +168,18 @@ describe("parseFootnote / storeVerse", () => {
 
   it("keeps the supplement mark on a stored heading, and the verse's extra fields", async () => {
     const fake = createFakeRedis()
-    const verse = await storeVerse(
-      fake.client,
-      "est",
-      1,
-      1,
-      1,
-      "1",
-      [
+    const verse = await storeVerse(fake.client, {
+      bookId: "est",
+      bookNumber: 1,
+      chapterNumber: 1,
+      verseNumber: 1,
+      verseLabel: "1",
+      verseObjects: [
         { type: "section", tag: "s2", content: "Oração", supplement: true },
         { type: "section", tag: "s2", content: "Outro" },
       ],
-      { supplement: true },
-    )
+      extra: { supplement: true },
+    })
     assert.equal(verse.supplement, true)
     assert.deepEqual(
       verse.text.map((t) => t.type === "section" && t.supplement === true),
@@ -191,16 +190,23 @@ describe("parseFootnote / storeVerse", () => {
   it("stores each kind of verse object", async () => {
     const fake = createFakeRedis()
 
-    const verse = await storeVerse(fake.client, "gen", 1, 1, 1, "1", [
-      { type: "text", text: "Texto*\n" },
-      { type: "quote", tag: "q2", text: "Citação" },
-      { type: "paragraph", tag: "p", nextChar: "\n" },
-      { type: "section", tag: "s1", content: "Título" },
-      { type: "section", tag: "ms", content: "LIVRO I" },
-      { type: "section", tag: "r", content: "(Mt 1,1)" },
-      { tag: "r", content: "(Mc 1,1)" },
-      { tag: "f", content: String.raw`+ \fr 1.1 \ft Nota.\f*` },
-    ] as unknown as USFMVerseObject[])
+    const verse = await storeVerse(fake.client, {
+      bookId: "gen",
+      bookNumber: 1,
+      chapterNumber: 1,
+      verseNumber: 1,
+      verseLabel: "1",
+      verseObjects: [
+        { type: "text", text: "Texto*\n" },
+        { type: "quote", tag: "q2", text: "Citação" },
+        { type: "paragraph", tag: "p", nextChar: "\n" },
+        { type: "section", tag: "s1", content: "Título" },
+        { type: "section", tag: "ms", content: "LIVRO I" },
+        { type: "section", tag: "r", content: "(Mt 1,1)" },
+        { tag: "r", content: "(Mc 1,1)" },
+        { tag: "f", content: String.raw`+ \fr 1.1 \ft Nota.\f*` },
+      ] as unknown as USFMVerseObject[],
+    })
 
     assert.deepEqual(
       verse.text.map((part) => [part.type, part.text]),
