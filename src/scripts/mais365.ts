@@ -676,7 +676,10 @@ const timeDay = async (
 }
 
 /** An item of the feed, as far as its RSS fields go. */
-const episodeOf = (item: string, title: string): Episode => {
+const episodeOf = (item: string, rawTitle: string): Episode => {
+  // Some titles end in a zero-width space (Dia 57, 127, 156…): unseen, but it
+  // rode along into the app's titles.
+  const title = rawTitle.replace(/[\u200B-\u200D\uFEFF]/g, "").trim()
   const description = field(item, "description")
   return {
     item,
