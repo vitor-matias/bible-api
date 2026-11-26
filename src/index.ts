@@ -4,6 +4,7 @@ import express from "express"
 import helmet from "helmet"
 import { createClient } from "redis"
 import setEndpoints from "./rest"
+import { planImport } from "./services/usfmImportService/planImport"
 import { readBook } from "./services/usfmImportService/readBook"
 import { retryFailedEmbeddings } from "./services/usfmImportService/retryEmbeddings"
 import { storeBook } from "./services/usfmImportService/storeBook"
@@ -11,7 +12,7 @@ import { EMBEDDING_FAILURES_KEY } from "./services/usfmImportService/storeChapte
 import { generateQueryEmbedding } from "./services/voyage/embeddings"
 import { createTaskPool } from "./util/concurrency"
 import { verifyEmbeddingIndex } from "./util/embeddingIndex"
-import { checkSourceFiles, FILE_HASHES_KEY } from "./util/fileHashes"
+import { FILE_HASHES_KEY } from "./util/fileHashes"
 import { flushDatabase } from "./util/flushDatabase"
 import {
   getImportState,
@@ -220,49 +221,16 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // Before anything can be flushed.
     await assertRedisModules(client)
 
-    const alreadyLoaded = (await client.exists(IMPORT_COMPLETE_KEY)) === 1
-
-    // Nothing is touched before these checks pass. With complete data already
-    // stored, refusing the import costs nothing, so it is kept and served.
-    const abort = async (reason: string, error?: unknown) => {
-      if (!alreadyLoaded) throw error ?? new Error(reason)
-      console.error(
-        `ERROR: import skipped: ${reason}; the existing data is left in place and served.`,
-        ...(error ? [error] : []),
-      )
-      // Awaited, not returned bare: the finally below would otherwise quit
-      // the client before the lookup runs.
-      return await existingDataOutcome(client)
-    }
-
-    const source = checkSourceFiles(
+    const plan = await planImport(client, {
       filePath,
-      alreadyLoaded && !process.argv.includes("--reimport")
-        ? await client.hGetAll(FILE_HASHES_KEY)
-        : undefined,
-    )
-    if (source.action === "abort") {
-      return await abort(source.reason, source.error)
-    }
-    if (source.action === "skip") {
-      console.info(
-        "Bible data already loaded; skipping import. Start with --reimport to force a reload.",
-      )
-      return await existingDataOutcome(client)
-    }
-    if (source.message) console.info(source.message)
-    const { files, fileHashes } = source
-
-    // Only embeddings can rebuild what the flush removes, so check they can be
-    // generated. A missing, rotated or out-of-quota key throws here.
-    try {
-      await generateQueryEmbedding("ping")
-    } catch (error) {
-      return await abort(
-        "embeddings cannot be generated (check VOYAGE_API_KEY, then restart to retry)",
-        error,
-      )
-    }
+      completeKey: IMPORT_COMPLETE_KEY,
+      reimport: process.argv.includes("--reimport"),
+      pingEmbeddings: () => generateQueryEmbedding("ping"),
+    })
+    // Awaited, not returned bare: the finally below would otherwise quit the
+    // client before the lookup runs.
+    if (!plan) return await existingDataOutcome(client)
+    const { files, fileHashes } = plan
 
     // flushDatabase also clears any stale completion marker and the record of
     // chapters whose embeddings failed.
