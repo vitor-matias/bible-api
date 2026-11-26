@@ -98,7 +98,9 @@ app.listen(port, () => {
 
 // What the import leaves behind. Anything short of "complete" still serves the
 // primary data, which is whole in every case; only semantic search waits.
-type ImportOutcome = "complete" | "embeddingsPending" | "indexIncomplete"
+// "indexUnverified": chapters are recorded as failed to embed, or the stored
+// data was kept without its vector index being checked this start.
+type ImportOutcome = "complete" | "indexUnverified" | "indexIncomplete"
 
 // Never rejects: an import failure is recorded in the import state, and a
 // failed background re-embed only leaves semantic search disabled.
@@ -117,15 +119,17 @@ const startImport = async (): Promise<void> => {
     return
   }
 
-  // Chapters whose embeddings failed are absent from the vector index, so
-  // semantic search would silently answer from a partial corpus. Serve the
-  // primary data, but mark the process degraded and refuse semantic search.
+  // Chapters whose embeddings failed are absent from the vector index, and an
+  // unchecked index may be partial, so semantic search could silently answer
+  // from part of the corpus. Serve the primary data, but mark the process
+  // degraded and refuse semantic search.
   setImportState("degraded")
 
-  // Re-embedding runs after the data is already being served: it is one Voyage
-  // call per failed chapter, and an outage during the import can leave
-  // hundreds of them — minutes of 503s if the start waited for it.
-  if (outcome === "embeddingsPending") {
+  // Re-embedding and the index check run after the data is already being
+  // served: re-embedding is one Voyage call per failed chapter (an outage
+  // during the import can leave hundreds), and the check waits out an index
+  // rebuild — minutes of 503s if the start waited for either.
+  if (outcome === "indexUnverified") {
     try {
       await reembedFailedChapters()
     } catch (error) {
@@ -144,15 +148,6 @@ function createImportClient() {
   })
   client.on("error", (err) => console.error(`Redis client error: ${err}`))
   return client
-}
-
-// Outcome for data that is already stored and is being kept as is.
-async function existingDataOutcome(
-  client: ReturnType<typeof createClient>,
-): Promise<ImportOutcome> {
-  return (await client.sCard(EMBEDDING_FAILURES_KEY)) > 0
-    ? "embeddingsPending"
-    : "complete"
 }
 
 // A stored vector the index skipped raises no error of its own, so the index is
@@ -219,9 +214,10 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
       reimport: process.argv.includes("--reimport"),
       pingEmbeddings: () => generateQueryEmbedding("ping"),
     })
-    // Awaited, not returned bare: the finally below would otherwise quit the
-    // client before the lookup runs.
-    if (!plan) return await existingDataOutcome(client)
+    // Kept data is checked in the background before semantic search is
+    // served: the last start may have been stopped after writing the
+    // completion marker but before its own index check finished.
+    if (!plan) return "indexUnverified"
     const { files, fileHashes } = plan
 
     // flushDatabase also clears any stale completion marker and the record of
@@ -260,7 +256,7 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
 
     if ((await client.sCard(EMBEDDING_FAILURES_KEY)) > 0) {
-      return "embeddingsPending"
+      return "indexUnverified"
     }
     return (await verifyIndexOrInvalidate(client))
       ? "complete"
