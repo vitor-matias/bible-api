@@ -86,13 +86,23 @@ export const parseFootnote = (content: string): _Footnote[] => {
 
 export const storeVerse = async (
   client: ReturnType<typeof createClient>,
-  bookId: string,
-  bookNumber: number,
-  chapterNumber: number,
-  verseNumber: number,
-  verseLabel: string,
-  verseObjects: USFMVerseObject[],
-  extra: Partial<Verse> = {},
+  {
+    bookId,
+    bookNumber,
+    chapterNumber,
+    verseNumber,
+    verseLabel,
+    verseObjects,
+    extra = {},
+  }: {
+    bookId: string
+    bookNumber: number
+    chapterNumber: number
+    verseNumber: number
+    verseLabel: string
+    verseObjects: USFMVerseObject[]
+    extra?: Partial<Verse>
+  },
 ): Promise<Verse> => {
   const searchId = `${String(bookNumber).padStart(2, "0")}-${String(chapterNumber).padStart(3, "0")}-${String(verseNumber).padStart(3, "0")}`
   const verseData: Verse = (await getVerse(

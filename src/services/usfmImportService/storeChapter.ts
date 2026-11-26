@@ -117,15 +117,14 @@ export const storeChapter = async (
       for (const verseObject of Object.values(verse.verseObjects)) {
         if (verseObject.tag === "va") {
           if (labelForVerse !== "") {
-            const verseData = /* NOSONAR */ await storeInOrder(
-              client,
-              bookCode,
+            const verseData = /* NOSONAR */ await storeInOrder(client, {
+              bookId: bookCode,
               bookNumber,
               chapterNumber,
               verseNumber,
-              labelForVerse,
-              objectsForVerse,
-            )
+              verseLabel: labelForVerse,
+              verseObjects: objectsForVerse,
+            })
             collectForEmbedding(versesData, verseData, verseNumber)
             objectsForVerse = []
 
@@ -138,54 +137,50 @@ export const storeChapter = async (
       }
 
       if (labelForVerse !== "") {
-        const verseData = /* NOSONAR */ await storeInOrder(
-          client,
-          bookCode,
+        const verseData = /* NOSONAR */ await storeInOrder(client, {
+          bookId: bookCode,
           bookNumber,
           chapterNumber,
           verseNumber,
-          labelForVerse,
-          objectsForVerse,
-        )
+          verseLabel: labelForVerse,
+          verseObjects: objectsForVerse,
+        })
         collectForEmbedding(versesData, verseData, verseNumber)
         verseNumber++
       }
     } else if (key !== "front") {
-      const verseData = /* NOSONAR */ await storeInOrder(
-        client,
-        bookCode,
+      const verseData = /* NOSONAR */ await storeInOrder(client, {
+        bookId: bookCode,
         bookNumber,
         chapterNumber,
         verseNumber,
         verseLabel,
-        verse.verseObjects,
-        verse.extra,
-      )
+        verseObjects: verse.verseObjects,
+        extra: verse.extra,
+      })
       collectForEmbedding(versesData, verseData, verseNumber)
       verseNumber++
     } else {
-      /* NOSONAR */ await storeInOrder(
-        client,
-        bookCode,
+      /* NOSONAR */ await storeInOrder(client, {
+        bookId: bookCode,
         bookNumber,
         chapterNumber,
-        0,
+        verseNumber: 0,
         verseLabel,
-        verse.verseObjects,
-        verse.extra,
-      )
+        verseObjects: verse.verseObjects,
+        extra: verse.extra,
+      })
     }
   }
   if (chapter.front === null) {
-    await storeInOrder(
-      client,
-      bookCode,
+    await storeInOrder(client, {
+      bookId: bookCode,
       bookNumber,
       chapterNumber,
-      0,
-      "front",
-      [],
-    )
+      verseNumber: 0,
+      verseLabel: "front",
+      verseObjects: [],
+    })
   }
 
   // Record the chapter's highest verse number so getChapter can address the
