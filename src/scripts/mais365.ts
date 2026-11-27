@@ -529,6 +529,40 @@ const alignReading = async (
   return fresh && fresh.anchored > (first?.anchored ?? -1) ? fresh : first
 }
 
+/**
+ * A reading's end, unless it came long after its last verse: its closing
+ * words were found again in the commentary that follows (a psalm's last line,
+ * quoted), and the day's reflection with it. Looked for again just after
+ * that verse.
+ */
+const endNearLastVerse = async (
+  transcript: Transcript,
+  end: number | undefined,
+  lastVerseAt: number | undefined,
+  nextStart: number | undefined,
+  verses: VerseText[],
+  range: [number, number] | undefined,
+  report: (problem: string) => void,
+): Promise<number | undefined> => {
+  const allowed = lateEnd(verses.at(-1)?.text ?? "")
+  if (end === undefined || lastVerseAt === undefined) return end
+  if (end - lastVerseAt <= allowed) return end
+  const window = Math.min(
+    nextStart ?? Number.POSITIVE_INFINITY,
+    lastVerseAt + allowed,
+  )
+  const nearer = await readingEnd(
+    transcript,
+    lastVerseAt,
+    window,
+    verses,
+    false,
+    range,
+    report,
+  )
+  return nearer !== undefined && nearer < window ? nearer : end
+}
+
 /** One reading of a day: where it starts and ends, and its verses' times. */
 const timeReading = async (
   episode: Episode,
@@ -575,31 +609,15 @@ const timeReading = async (
           report,
         )
       : null
-  // Ended long after its last verse: its closing words were found again in
-  // the commentary that follows (a psalm's last line, quoted), and the day's
-  // reflection with it. Looked for again just after that verse.
-  const lastVerseAt = aligned?.times.at(-1)?.[1]
-  const allowed = lateEnd(verses.at(-1)?.text ?? "")
-  if (
-    end !== undefined &&
-    lastVerseAt !== undefined &&
-    end - lastVerseAt > allowed
-  ) {
-    const window = Math.min(
-      nextStart ?? Number.POSITIVE_INFINITY,
-      lastVerseAt + allowed,
-    )
-    const nearer = await readingEnd(
-      transcript,
-      lastVerseAt,
-      window,
-      verses,
-      false,
-      range,
-      report,
-    )
-    if (nearer !== undefined && nearer < window) end = nearer
-  }
+  end = await endNearLastVerse(
+    transcript,
+    end,
+    aligned?.times.at(-1)?.[1],
+    nextStart,
+    verses,
+    range,
+    report,
+  )
   const total = verses.filter((verse) => verse.number > 0).length
   if (!aligned) report("not aligned")
   else if (aligned.anchored < total * 0.6)
