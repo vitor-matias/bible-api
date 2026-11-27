@@ -20,6 +20,8 @@ const books: BookName[] = [
   { id: "pro", shortName: "Provérbios", chapterCount: 31 },
   { id: "est", shortName: "Ester", chapterCount: 10 },
   { id: "luk", shortName: "Lucas", chapterCount: 24 },
+  { id: "mat", shortName: "Mateus", chapterCount: 28 },
+  { id: "zec", shortName: "Zacarias", chapterCount: 14 },
   { id: "oba", shortName: "Abdias", chapterCount: 1 },
   { id: "2ki", shortName: "2 Reis", chapterCount: 25 },
   { id: "sng", shortName: "Cântico dos Cânticos", chapterCount: 8 },
@@ -184,6 +186,50 @@ describe("findChapterStarts", () => {
     )
   })
 
+  // Dia 270: Whisper heard "Zacarias 8" as "Ascarias 8".
+  it("takes a heading Whisper misheard as it often does", () => {
+    assert.deepEqual(
+      findChapterStarts(
+        [
+          { start: 637.8, text: " Zacarias 7" },
+          { start: 762.3, text: " Ascarias 8" },
+        ],
+        [
+          { bookId: "zec", chapter: 7 },
+          { bookId: "zec", chapter: 8 },
+        ],
+        books,
+      ),
+      [637.8, 762.3],
+    )
+  })
+
+  // Dia 262: "Mateus 16" never heard; "capítulo 16" in the commentary after
+  // the readings was taken for it, and Mateus 17 and Provérbios 19 after it.
+  it("leaves a heading unheard once a later reading's comes first", () => {
+    const day262 = [
+      { start: 293.2, text: " Mateus 15" },
+      { start: 831.2, text: " Mateus 17" },
+      { start: 1064.7, text: " Provérbios 19" },
+      { start: 1148.4, text: " nestes capítulos" },
+      { start: 1411.8, text: " 16" },
+      { start: 1600, text: " Mateus 17 diz-nos" },
+    ]
+    assert.deepEqual(
+      findChapterStarts(
+        day262,
+        [
+          { bookId: "mat", chapter: 15 },
+          { bookId: "mat", chapter: 16 },
+          { bookId: "mat", chapter: 17 },
+          { bookId: "pro", chapter: 19, verses: [9, 12] },
+        ],
+        books,
+      ),
+      [293.2, undefined, 831.2, 1064.7],
+    )
+  })
+
   it("leaves a chapter without a heading unknown and keeps looking after it", () => {
     const withoutFirst = segments.filter((s) => s.start !== 56.5)
     assert.deepEqual(findChapterStarts(withoutFirst, readings, books), [
@@ -204,6 +250,88 @@ describe("findChapterStarts", () => {
     assert.deepEqual(
       findChapterStarts(announced, [{ bookId: "job", chapter: 29 }], books),
       [300],
+    )
+  })
+
+  // The announcement names a later reading with its verses: no reason to
+  // think the readings before it unheard.
+  it("finds every heading past an announcement naming a later reading", () => {
+    const day20 = [
+      { start: 47.2, text: " e vamos ouvir Génesis 38" },
+      { start: 49.5, text: " Jó 29 e 30" },
+      { start: 52, text: " Provérbios 3, 28 a 32." },
+      { start: 59, text: " Naquele tempo, Judá apartou-se dos seus irmãos" },
+      { start: 300, text: " Jó 29" },
+      { start: 500, text: " Jó 30" },
+      { start: 700, text: " Provérbios 3, 28 a 32" },
+    ]
+    assert.deepEqual(
+      findChapterStarts(
+        day20,
+        [
+          { bookId: "gen", chapter: 38 },
+          { bookId: "job", chapter: 29 },
+          { bookId: "job", chapter: 30 },
+          { bookId: "pro", chapter: 3, verses: [28, 32] },
+        ],
+        books,
+      ),
+      [59, 300, 500, 700],
+    )
+  })
+
+  // Dia 65: the announcement runs on to "Salmo 97" in a segment of its own,
+  // just before Números 16's heading.
+  it("doesn't take a later reading's name in the announcement for a heading", () => {
+    const day65 = [
+      { start: 49.6, text: " vamos ouvir números 16, Deuteronómio 15 e 16," },
+      { start: 58, text: " Salmo 97" },
+      { start: 59.9, text: " Números 16" },
+      { start: 395.4, text: " Deuteronómio 15" },
+      { start: 643.4, text: " Deuteronómio 16" },
+      { start: 885.4, text: " Salmo 97" },
+    ]
+    const withMoses = [
+      ...books,
+      { id: "num", shortName: "Números", chapterCount: 36 },
+      { id: "deu", shortName: "Deuteronómio", chapterCount: 34 },
+    ]
+    assert.deepEqual(
+      findChapterStarts(
+        day65,
+        [
+          { bookId: "num", chapter: 16 },
+          { bookId: "deu", chapter: 15 },
+          { bookId: "deu", chapter: 16 },
+          { bookId: "psa", chapter: 97 },
+        ],
+        withMoses,
+      ),
+      [59.9, 395.4, 643.4, 885.4],
+    )
+  })
+
+  // The announcement can name the next reading alone, as a heading would be.
+  it("doesn't take the next reading named in the announcement for its heading", () => {
+    const withNumbers = [
+      ...books,
+      { id: "num", shortName: "Números", chapterCount: 36 },
+    ]
+    assert.deepEqual(
+      findChapterStarts(
+        [
+          { start: 49.6, text: " vamos ouvir números 16" },
+          { start: 58, text: " Salmo 97." },
+          { start: 59.9, text: " Números 16" },
+          { start: 885.4, text: " Salmo 97" },
+        ],
+        [
+          { bookId: "num", chapter: 16 },
+          { bookId: "psa", chapter: 97 },
+        ],
+        withNumbers,
+      ),
+      [59.9, 885.4],
     )
   })
 

@@ -60,14 +60,42 @@ const jobsArg = process.argv.indexOf("--jobs")
 const JOBS =
   jobsArg > 0
     ? Math.max(1, Number(process.argv[jobsArg + 1]) || 1)
-    : Math.max(1, Math.floor(os.availableParallelism() / 6))
+    : // availableParallelism is Node 18.14+; cpus() before it.
+      Math.max(
+        1,
+        Math.floor((os.availableParallelism?.() ?? os.cpus().length) / 6),
+      )
 
 const execAsync = promisify(execFile)
+
+// Where a reading starts, by day, when its heading is never said and its
+// first verse can't be found in the transcript (numbers spoken as numerals).
+const START_FIXES: Record<number, Record<string, number>> = {
+  // «No 18º ano…», straight on from Judite 1.
+  246: { "jdt 2": 655.6 },
+}
+
+// A reading's name as printed, and the verse its link opens at, where its
+// verses as stored would read wrongly (Ester 1,18 for Ester 1,1).
+const READING_NAMES: Record<
+  number,
+  Record<string, { label: string; verseStart: string }>
+> = {
+  // Addition A is printed inside Ester 1, before its 1,1: A1-17.
+  274: { "est 1": { label: "Ester 1,A1-17", verseStart: "A1" } },
+  275: { "est 1": { label: "Ester 1,1-22", verseStart: "1" } },
+}
 
 // Descriptions that name a reading wrongly, by day: [as written, as read].
 // Dia 144–156 and 173 name the psalms of other days; the episodes read the
 // official plan's (ejns.pt/mais365, "Plano de leitura oficial").
 const DESCRIPTION_FIXES: Record<number, [string, string][]> = {
+  // Read: Provérbios 7 after 2 Crónicas 33, not the psalm named.
+  188: [["Salmo 147", "Provérbios 7"]],
+  // Ester's addition A is stored as Ester 1's first 17 verses, its 1,1 as
+  // the 18th: the verses as stored (READING_NAMES names them as printed).
+  274: [["Ester A", "Ester 1:1–17"]],
+  275: [["Ester 1–2", "Ester 1:18–39; Ester 2"]],
   144: [["Salmo 44", "Salmo 62"]],
   145: [["Salmo 45", "Salmo 64"]],
   146: [
@@ -433,6 +461,14 @@ const pastJingle = async (
     : start
 }
 
+/**
+ * Seconds a reading may run on past its last verse's start before its end is
+ * doubted: a minute, or longer for a long last verse (Zacarias 4,5 holds
+ * 4,6-14 too, which the translation reorders under alternate numbers).
+ */
+const lateEnd = (lastVerse: string): number =>
+  Math.max(60, lastVerse.split(/\s+/).length * 0.6 + 20)
+
 /** Where a reading ends: in part, just before the jingle that follows it. */
 const readingEnd = async (
   transcript: Transcript,
@@ -493,6 +529,40 @@ const alignReading = async (
   return fresh && fresh.anchored > (first?.anchored ?? -1) ? fresh : first
 }
 
+/**
+ * A reading's end, unless it came long after its last verse: its closing
+ * words were found again in the commentary that follows (a psalm's last line,
+ * quoted), and the day's reflection with it. Looked for again just after
+ * that verse.
+ */
+const endNearLastVerse = async (
+  transcript: Transcript,
+  end: number | undefined,
+  lastVerseAt: number | undefined,
+  nextStart: number | undefined,
+  verses: VerseText[],
+  range: [number, number] | undefined,
+  report: (problem: string) => void,
+): Promise<number | undefined> => {
+  const allowed = lateEnd(verses.at(-1)?.text ?? "")
+  if (end === undefined || lastVerseAt === undefined) return end
+  if (end - lastVerseAt <= allowed) return end
+  const window = Math.min(
+    nextStart ?? Number.POSITIVE_INFINITY,
+    lastVerseAt + allowed,
+  )
+  const nearer = await readingEnd(
+    transcript,
+    lastVerseAt,
+    window,
+    verses,
+    false,
+    range,
+    report,
+  )
+  return nearer !== undefined && nearer < window ? nearer : end
+}
+
 /** One reading of a day: where it starts and ends, and its verses' times. */
 const timeReading = async (
   episode: Episode,
@@ -512,7 +582,7 @@ const timeReading = async (
   const verses = (await chapterVerses(bookId, chapter)).filter(
     (verse) => !range || (verse.number >= range[0] && verse.number <= range[1]),
   )
-  const end =
+  let end =
     heard === undefined
       ? undefined
       : await readingEnd(
@@ -539,6 +609,15 @@ const timeReading = async (
           report,
         )
       : null
+  end = await endNearLastVerse(
+    transcript,
+    end,
+    aligned?.times.at(-1)?.[1],
+    nextStart,
+    verses,
+    range,
+    report,
+  )
   const total = verses.filter((verse) => verse.number > 0).length
   if (!aligned) report("not aligned")
   else if (aligned.anchored < total * 0.6)
@@ -651,6 +730,10 @@ const timeDay = async (
     pausesFrom: (from: number) => pausesFrom(guid, url, from),
   }
   const starts = findChapterStarts(transcript.segments, readings, run.books)
+  for (const [i, { bookId, chapter }] of readings.entries()) {
+    const fixed = START_FIXES[day]?.[`${bookId} ${chapter}`]
+    if (fixed !== undefined) starts[i] = fixed
+  }
   await placeUnheaded(day, readings, starts, transcript.segments, run)
 
   const planned: PlanDay["readings"] = []
@@ -663,8 +746,8 @@ const timeDay = async (
       run.problems.push(
         `Dia ${day}: ${reading.bookId} ${reading.chapter} from the end before`,
       )
-    planned.push(
-      await timeReading(
+    planned.push({
+      ...(await timeReading(
         episode,
         reading,
         start,
@@ -672,8 +755,9 @@ const timeDay = async (
         i + 1 >= readings.length || starts[i + 1] !== undefined,
         transcript,
         run,
-      ),
-    )
+      )),
+      ...READING_NAMES[day]?.[`${reading.bookId} ${reading.chapter}`],
+    })
   }
   const lastEnd = planned.at(-1)?.episode.end
   if (lastEnd == null) run.problems.push(`Dia ${day}: no reflection start`)
