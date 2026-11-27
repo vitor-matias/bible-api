@@ -1,4 +1,5 @@
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { after, before, describe, it } from "node:test"
 import type { Request, Response } from "express"
 import { verseKey } from "../services/verse/getVerse"
@@ -165,6 +166,15 @@ describe("getCatalogHashController", () => {
 
     const again = await call(getCatalogHashController, client, {})
     assert.equal((again.body as { hash: string }).hash, hash)
+
+    // What the apps check a download against: the listing's own JSON text.
+    const listing = await call(getBooksController, client, {
+      query: { withChapters: "true" },
+    })
+    assert.equal(
+      hash,
+      createHash("sha256").update(JSON.stringify(listing.body)).digest("hex"),
+    )
 
     // Ester's additions, say, split into numbered verses by a reimport.
     await client.json.set(verseKey("gen", 1, 1), "$", {

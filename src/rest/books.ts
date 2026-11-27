@@ -26,7 +26,8 @@ export const getBooksController = async (req: Request, res: Response) => {
 /**
  * The hash of the full catalog (/v1/books?withChapters=true), which the apps
  * keep offline: one that hashes differently from their copy downloads it
- * again. Served behind checkCache, so it is kept in Redis, shared by every
+ * again, and stores the download only if its JSON text hashes the same. So
+ * this hashes exactly the text that route sends. Served behind checkCache, so it is kept in Redis, shared by every
  * process, and evicted with the other cached responses when a start imports.
  */
 export const getCatalogHashController = async (
