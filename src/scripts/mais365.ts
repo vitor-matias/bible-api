@@ -92,6 +92,9 @@ const READING_NAMES: Record<
 const DESCRIPTION_FIXES: Record<number, [string, string][]> = {
   // Read: Provérbios 7 after 2 Crónicas 33, not the psalm named.
   188: [["Salmo 147", "Provérbios 7"]],
+  // Read: Joel 4 after Obadias, which the description leaves out (the
+  // other days never read it: Joel 1-3 are Dia 198 and 199).
+  257: [["Obadias;", "Obadias; Joel 4;"]],
   // Ester's addition A is stored as Ester 1's first 17 verses, its 1,1 as
   // the 18th: the verses as stored (READING_NAMES names them as printed).
   274: [["Ester A", "Ester 1:1–17"]],
