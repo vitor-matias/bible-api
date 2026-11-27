@@ -461,6 +461,14 @@ const pastJingle = async (
     : start
 }
 
+/**
+ * Seconds a reading may run on past its last verse's start before its end is
+ * doubted: a minute, or longer for a long last verse (Zacarias 4,5 holds
+ * 4,6-14 too, which the translation reorders under alternate numbers).
+ */
+const lateEnd = (lastVerse: string): number =>
+  Math.max(60, lastVerse.split(/\s+/).length * 0.6 + 20)
+
 /** Where a reading ends: in part, just before the jingle that follows it. */
 const readingEnd = async (
   transcript: Transcript,
@@ -540,7 +548,7 @@ const timeReading = async (
   const verses = (await chapterVerses(bookId, chapter)).filter(
     (verse) => !range || (verse.number >= range[0] && verse.number <= range[1]),
   )
-  const end =
+  let end =
     heard === undefined
       ? undefined
       : await readingEnd(
@@ -567,6 +575,31 @@ const timeReading = async (
           report,
         )
       : null
+  // Ended long after its last verse: its closing words were found again in
+  // the commentary that follows (a psalm's last line, quoted), and the day's
+  // reflection with it. Looked for again just after that verse.
+  const lastVerseAt = aligned?.times.at(-1)?.[1]
+  const allowed = lateEnd(verses.at(-1)?.text ?? "")
+  if (
+    end !== undefined &&
+    lastVerseAt !== undefined &&
+    end - lastVerseAt > allowed
+  ) {
+    const window = Math.min(
+      nextStart ?? Number.POSITIVE_INFINITY,
+      lastVerseAt + allowed,
+    )
+    const nearer = await readingEnd(
+      transcript,
+      lastVerseAt,
+      window,
+      verses,
+      false,
+      range,
+      report,
+    )
+    if (nearer !== undefined && nearer < window) end = nearer
+  }
   const total = verses.filter((verse) => verse.number > 0).length
   if (!aligned) report("not aligned")
   else if (aligned.anchored < total * 0.6)

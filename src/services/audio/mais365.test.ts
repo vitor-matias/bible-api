@@ -253,6 +253,64 @@ describe("findChapterStarts", () => {
     )
   })
 
+  // The announcement names a later reading with its verses: no reason to
+  // think the readings before it unheard.
+  it("finds every heading past an announcement naming a later reading", () => {
+    const day20 = [
+      { start: 47.2, text: " e vamos ouvir Génesis 38" },
+      { start: 49.5, text: " Jó 29 e 30" },
+      { start: 52, text: " Provérbios 3, 28 a 32." },
+      { start: 59, text: " Naquele tempo, Judá apartou-se dos seus irmãos" },
+      { start: 300, text: " Jó 29" },
+      { start: 500, text: " Jó 30" },
+      { start: 700, text: " Provérbios 3, 28 a 32" },
+    ]
+    assert.deepEqual(
+      findChapterStarts(
+        day20,
+        [
+          { bookId: "gen", chapter: 38 },
+          { bookId: "job", chapter: 29 },
+          { bookId: "job", chapter: 30 },
+          { bookId: "pro", chapter: 3, verses: [28, 32] },
+        ],
+        books,
+      ),
+      [59, 300, 500, 700],
+    )
+  })
+
+  // Dia 65: the announcement runs on to "Salmo 97" in a segment of its own,
+  // just before Números 16's heading.
+  it("doesn't take a later reading's name in the announcement for a heading", () => {
+    const day65 = [
+      { start: 49.6, text: " vamos ouvir números 16, Deuteronómio 15 e 16," },
+      { start: 58, text: " Salmo 97" },
+      { start: 59.9, text: " Números 16" },
+      { start: 395.4, text: " Deuteronómio 15" },
+      { start: 643.4, text: " Deuteronómio 16" },
+      { start: 885.4, text: " Salmo 97" },
+    ]
+    const withMoses = [
+      ...books,
+      { id: "num", shortName: "Números", chapterCount: 36 },
+      { id: "deu", shortName: "Deuteronómio", chapterCount: 34 },
+    ]
+    assert.deepEqual(
+      findChapterStarts(
+        day65,
+        [
+          { bookId: "num", chapter: 16 },
+          { bookId: "deu", chapter: 15 },
+          { bookId: "deu", chapter: 16 },
+          { bookId: "psa", chapter: 97 },
+        ],
+        withMoses,
+      ),
+      [59.9, 395.4, 643.4, 885.4],
+    )
+  })
+
   it("hears ordinals, 'Livro de' and Esther's old spelling", () => {
     const spoken = [
       { start: 1, text: " 2º Livro dos Reis 25" },
