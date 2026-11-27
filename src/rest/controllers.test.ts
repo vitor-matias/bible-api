@@ -1,13 +1,15 @@
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { after, before, describe, it } from "node:test"
 import type { Request, Response } from "express"
-import { fakeBible } from "../testing/bibleFixture"
+import { verseKey } from "../services/verse/getVerse"
+import { fakeBible, verse } from "../testing/bibleFixture"
 import { fakeRequest, fakeResponse } from "../testing/fakeExpress"
 import { createFakeRedis } from "../testing/fakeRedis"
 import { startVoyageStub } from "../testing/voyageStub"
 import { setImportState } from "../util/importState"
 import { getBookController } from "./book"
-import { getBooksController } from "./books"
+import { getBooksController, getCatalogHashController } from "./books"
 import { getChapterController } from "./chapter"
 import { getIntroController, getIntrosController } from "./intros"
 import { searchVersesController } from "./search"
@@ -152,6 +154,35 @@ describe("getBookController / getBooksController", () => {
       ["gen"],
     )
     assert.equal((full.body as Book[])[0].chapters?.length, 2)
+  })
+})
+
+describe("getCatalogHashController", () => {
+  it("hashes the full catalog, so a changed import hashes differently", async () => {
+    const { client } = await fakeBible()
+    const first = await call(getCatalogHashController, client, {})
+    const hash = (first.body as { hash: string }).hash
+    assert.match(hash, /^[0-9a-f]{64}$/)
+
+    const again = await call(getCatalogHashController, client, {})
+    assert.equal((again.body as { hash: string }).hash, hash)
+
+    // What the apps check a download against: the listing's own JSON text.
+    const listing = await call(getBooksController, client, {
+      query: { withChapters: "true" },
+    })
+    assert.equal(
+      hash,
+      createHash("sha256").update(JSON.stringify(listing.body)).digest("hex"),
+    )
+
+    // Ester's additions, say, split into numbered verses by a reimport.
+    await client.json.set(verseKey("gen", 1, 1), "$", {
+      ...verse("gen", 1, 1),
+      numberLabel: "A1",
+    })
+    const changed = await call(getCatalogHashController, client, {})
+    assert.notEqual((changed.body as { hash: string }).hash, hash)
   })
 })
 
