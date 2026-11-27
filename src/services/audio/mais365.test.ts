@@ -311,6 +311,30 @@ describe("findChapterStarts", () => {
     )
   })
 
+  // The announcement can name the next reading alone, as a heading would be.
+  it("doesn't take the next reading named in the announcement for its heading", () => {
+    const withNumbers = [
+      ...books,
+      { id: "num", shortName: "Números", chapterCount: 36 },
+    ]
+    assert.deepEqual(
+      findChapterStarts(
+        [
+          { start: 49.6, text: " vamos ouvir números 16" },
+          { start: 58, text: " Salmo 97." },
+          { start: 59.9, text: " Números 16" },
+          { start: 885.4, text: " Salmo 97" },
+        ],
+        [
+          { bookId: "num", chapter: 16 },
+          { bookId: "psa", chapter: 97 },
+        ],
+        withNumbers,
+      ),
+      [59.9, 885.4],
+    )
+  })
+
   it("hears ordinals, 'Livro de' and Esther's old spelling", () => {
     const spoken = [
       { start: 1, text: " 2º Livro dos Reis 25" },

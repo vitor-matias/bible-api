@@ -225,7 +225,10 @@ export const findChapterStarts = (
       // The next reading's heading first: this one wasn't heard. Looking on
       // took a mention in the commentary for it (Dia 262: "capítulo 16"),
       // and every reading after it with it.
-      if (later.some((next) => joined.some(next))) return undefined
+      // Only past a heading already found: before the first, the day's
+      // announcement can name the next reading on its own ("Salmo 97.").
+      if (cursor > 0 && later.some((next) => joined.some(next)))
+        return undefined
     }
     return undefined
   })
