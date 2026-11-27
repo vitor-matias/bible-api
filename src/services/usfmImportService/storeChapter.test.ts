@@ -121,4 +121,45 @@ describe("storeChapter", () => {
     )
     assert.equal(fake.hashes.size, 0)
   })
+
+  it("starts a verse at each \\va, labelled with the alternative number", async () => {
+    // Zc 3:8-9 and 4:5-6 as the source prints them; Sir 51's litany indents
+    // each lettered verse with the empty \q1 before its \va.
+    const book = usfm.toJSON(String.raw`\id ZEC
+\c 3
+\v 7 Assim fala o Senhor.
+\v 8-9 \va 9a\va* Porque eis a pedra.
+\va 8\va* Ouve, pois, Josué.
+\va 9b\va* E afastarei a iniquidade.
+\v 10 Naquele dia.
+\c 4
+\v 5 Não, meu senhor.
+\va 6a\va* Então ele \va \va*respondeu-me.
+\q1
+\va a\va* Louvai ao Senhor,
+\q1 porque a sua misericórdia é eterna.
+`)
+    const fake = createFakeRedis()
+    const { pool } = capturingPool()
+    await storeChapter(fake.client, "zec", 38, 3, book.chapters["3"], pool)
+    await storeChapter(fake.client, "zec", 38, 4, book.chapters["4"], pool)
+
+    const verse = (c: number, n: number) =>
+      fake.json.get(`verse:zec:${c}:${n}`) as Verse
+    const texts = (v: Verse) => v.text.map((t) => t.text.trim())
+
+    assert.deepEqual(
+      [1, 2, 3, 4, 5].map((n) => verse(3, n).numberLabel),
+      ["7", "9a", "8", "9b", "10"],
+    )
+    assert.deepEqual(texts(verse(3, 2)), ["Porque eis a pedra."])
+    assert.equal(verse(4, 1).numberLabel, "5")
+    assert.deepEqual(texts(verse(4, 1)), ["Não, meu senhor."])
+    assert.equal(verse(4, 2).numberLabel, "6a")
+    assert.equal(texts(verse(4, 2)).join(" "), "Então ele respondeu-me.")
+    const litany = verse(4, 3)
+    assert.equal(litany.numberLabel, "a")
+    assert.equal(litany.text[0].type, "quote")
+    assert.equal(litany.text[0].text, "​")
+  })
 })

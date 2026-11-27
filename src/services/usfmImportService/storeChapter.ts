@@ -109,13 +109,29 @@ export const storeChapter = async (
       }
     }
 
-    if (verse.verseObjects.some((verseObject) => verseObject.tag === "ms")) {
+    // \va gives an alternative verse number (Zc 4 reordered, Sir 51's lettered
+    // litany): each one starts a verse of its own, labelled with it.
+    if (verse.verseObjects.some((o) => o.tag === "ms" || o.tag === "va")) {
       let objectsForVerse: USFMVerseObject[] = []
       verseNumber = key === "front" ? 0 : verseNumber
-      let labelForVerse = verseLabel.includes("-") ? "" : verseNumber.toString()
+      // A range ("8-9") is spelled out by its \va pieces.
+      let labelForVerse = verseLabel.includes("-")
+        ? ""
+        : key === "front"
+          ? "0"
+          : verseLabel
+      // Only the first piece is the verse the parser gave us.
+      let extraForVerse = verse.extra
 
       for (const verseObject of Object.values(verse.verseObjects)) {
-        if (verseObject.tag === "va") {
+        // An empty \va names no verse: its text stays where it is.
+        if (verseObject.tag === "va" && verseObject.content?.trim()) {
+          // An empty \q1 just before the \va indents the verse it starts.
+          const last = objectsForVerse.at(-1)
+          const carriedQuote =
+            last?.type === "quote" && !last.text?.trim()
+              ? objectsForVerse.pop()
+              : undefined
           if (labelForVerse !== "") {
             const verseData = /* NOSONAR */ await storeInOrder(client, {
               bookId: bookCode,
@@ -124,13 +140,17 @@ export const storeChapter = async (
               verseNumber,
               verseLabel: labelForVerse,
               verseObjects: objectsForVerse,
+              extra: extraForVerse,
             })
             collectForEmbedding(versesData, verseData, verseNumber)
+            extraForVerse = undefined
             objectsForVerse = []
-
             verseNumber++
           }
-          labelForVerse = verseObject?.content as string
+          if (carriedQuote) {
+            objectsForVerse.push({ ...carriedQuote, text: "\u200B" })
+          }
+          labelForVerse = (verseObject.content ?? "").trim()
         } else {
           objectsForVerse.push(verseObject)
         }
@@ -144,6 +164,7 @@ export const storeChapter = async (
           verseNumber,
           verseLabel: labelForVerse,
           verseObjects: objectsForVerse,
+          extra: extraForVerse,
         })
         collectForEmbedding(versesData, verseData, verseNumber)
         verseNumber++
