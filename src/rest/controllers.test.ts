@@ -8,7 +8,7 @@ import { createFakeRedis } from "../testing/fakeRedis"
 import { startVoyageStub } from "../testing/voyageStub"
 import { setImportState } from "../util/importState"
 import { getBookController } from "./book"
-import { getBooksController, makeCatalogHashController } from "./books"
+import { getBooksController, getCatalogHashController } from "./books"
 import { getChapterController } from "./chapter"
 import { getIntroController, getIntrosController } from "./intros"
 import { searchVersesController } from "./search"
@@ -156,28 +156,22 @@ describe("getBookController / getBooksController", () => {
   })
 })
 
-describe("makeCatalogHashController", () => {
-  it("hashes the full catalog once, so a changed import hashes differently", async () => {
+describe("getCatalogHashController", () => {
+  it("hashes the full catalog, so a changed import hashes differently", async () => {
     const { client } = await fakeBible()
-    const first = await call(makeCatalogHashController(), client, {})
+    const first = await call(getCatalogHashController, client, {})
     const hash = (first.body as { hash: string }).hash
     assert.match(hash, /^[0-9a-f]{64}$/)
 
-    // The same data hashes the same in another process.
-    const again = await call(makeCatalogHashController(), client, {})
+    const again = await call(getCatalogHashController, client, {})
     assert.equal((again.body as { hash: string }).hash, hash)
 
-    const controller = makeCatalogHashController()
-    await call(controller, client, {})
     // Ester's additions, say, split into numbered verses by a reimport.
     await client.json.set(verseKey("gen", 1, 1), "$", {
       ...verse("gen", 1, 1),
       numberLabel: "A1",
     })
-    // Kept for the process: data changes only by an import at startup.
-    const kept = await call(controller, client, {})
-    assert.equal((kept.body as { hash: string }).hash, hash)
-    const changed = await call(makeCatalogHashController(), client, {})
+    const changed = await call(getCatalogHashController, client, {})
     assert.notEqual((changed.body as { hash: string }).hash, hash)
   })
 })

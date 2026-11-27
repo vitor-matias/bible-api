@@ -1,6 +1,10 @@
 import type express from "express"
 import { checkCache } from "../middleware/checkCache"
-import { fullBookRateLimit, searchRateLimit } from "../middleware/rateLimiter"
+import {
+  fullBookRateLimit,
+  fullBookRateLimiter,
+  searchRateLimit,
+} from "../middleware/rateLimiter"
 import { validateBooksParams } from "../middleware/validateBooksParams"
 import { validateQueryParams } from "../middleware/validateQueryParams"
 import { validateSearchParams } from "../middleware/validateSearchParams"
@@ -13,7 +17,7 @@ import {
   makePlanDayController,
 } from "./audio"
 import { getBookController } from "./book"
-import { getBooksController, makeCatalogHashController } from "./books"
+import { getBooksController, getCatalogHashController } from "./books"
 import { getChapterController } from "./chapter"
 import { getIntroController, getIntrosController } from "./intros"
 import { type RemindersSetup, setReminderEndpoints } from "./reminders"
@@ -113,9 +117,15 @@ export default function setEndpoints(
   )
   // The full-book limiter sits after checkCache: it guards the expensive
   // materialization on a miss, and a cached replay must not spend that budget.
-  // Ahead of "/v1/:book/:chapter", which has its shape. Not behind checkCache:
-  // the controller keeps the hash itself.
-  app.get("/v1/books/hash", noQueryParams, makeCatalogHashController())
+  // Ahead of "/v1/:book/:chapter", which has its shape. A miss reads the
+  // whole catalog, so it is limited as the full listing is.
+  app.get(
+    "/v1/books/hash",
+    noQueryParams,
+    checkCache,
+    fullBookRateLimiter,
+    getCatalogHashController,
+  )
   app.get(
     "/v1/books",
     validateBooksParams,

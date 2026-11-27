@@ -26,21 +26,15 @@ export const getBooksController = async (req: Request, res: Response) => {
 /**
  * The hash of the full catalog (/v1/books?withChapters=true), which the apps
  * keep offline: one that hashes differently from their copy downloads it
- * again. Data changes only by an import at startup, before data is served, so
- * each process hashes once.
+ * again. Served behind checkCache, so it is kept in Redis, shared by every
+ * process, and evicted with the other cached responses when a start imports.
  */
-export const makeCatalogHashController = () => {
-  let hash: Promise<string> | undefined
-  return async (_req: Request, res: Response) => {
-    hash ??= listBooks(res.locals.client, true).then((books) =>
-      createHash("sha256").update(JSON.stringify(books)).digest("hex"),
-    )
-    try {
-      res.json({ hash: await hash })
-    } catch (error) {
-      // A failed read is not kept: the next request tries again.
-      hash = undefined
-      throw error
-    }
-  }
+export const getCatalogHashController = async (
+  _req: Request,
+  res: Response,
+) => {
+  const books = await listBooks(res.locals.client, true)
+  res.json({
+    hash: createHash("sha256").update(JSON.stringify(books)).digest("hex"),
+  })
 }
