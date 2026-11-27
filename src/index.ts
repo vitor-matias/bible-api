@@ -277,7 +277,12 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     await client.set(IMPORT_COMPLETE_KEY, "1")
     // Again now it's done: another process on this Redis may have cached
     // responses (the catalog, its hash) read from the partial data meanwhile.
-    await clearCache(client)
+    // Best-effort: the data is complete, so a failure must not fail the import.
+    await clearCache(client).catch((error) =>
+      console.warn(
+        `Failed to clear cached responses after the import: ${error}`,
+      ),
+    )
 
     console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
 
