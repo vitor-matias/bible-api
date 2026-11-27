@@ -275,6 +275,9 @@ async function loadFilesIntoMemory(): Promise<ImportOutcome> {
     // between the two writes leaves no marker, so the next start reimports.
     await client.hSet(FILE_HASHES_KEY, fileHashes)
     await client.set(IMPORT_COMPLETE_KEY, "1")
+    // Again now it's done: another process on this Redis may have cached
+    // responses (the catalog, its hash) read from the partial data meanwhile.
+    await clearCache(client)
 
     console.log(`load complete. took ${(Date.now() - start) / 1000}s`)
 
