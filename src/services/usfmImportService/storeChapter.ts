@@ -115,11 +115,8 @@ export const storeChapter = async (
       let objectsForVerse: USFMVerseObject[] = []
       verseNumber = key === "front" ? 0 : verseNumber
       // A range ("8-9") is spelled out by its \va pieces.
-      let labelForVerse = verseLabel.includes("-")
-        ? ""
-        : key === "front"
-          ? "0"
-          : verseLabel
+      let labelForVerse = key === "front" ? "0" : verseLabel
+      if (verseLabel.includes("-")) labelForVerse = ""
       // Only the first piece is the verse the parser gave us.
       let extraForVerse = verse.extra
 
