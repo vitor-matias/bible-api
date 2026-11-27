@@ -13,7 +13,7 @@ import {
   makePlanDayController,
 } from "./audio"
 import { getBookController } from "./book"
-import { getBooksController } from "./books"
+import { getBooksController, makeCatalogHashController } from "./books"
 import { getChapterController } from "./chapter"
 import { getIntroController, getIntrosController } from "./intros"
 import { type RemindersSetup, setReminderEndpoints } from "./reminders"
@@ -113,6 +113,9 @@ export default function setEndpoints(
   )
   // The full-book limiter sits after checkCache: it guards the expensive
   // materialization on a miss, and a cached replay must not spend that budget.
+  // Ahead of "/v1/:book/:chapter", which has its shape. Not behind checkCache:
+  // the controller keeps the hash itself.
+  app.get("/v1/books/hash", noQueryParams, makeCatalogHashController())
   app.get(
     "/v1/books",
     validateBooksParams,
