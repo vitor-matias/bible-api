@@ -34,6 +34,15 @@ export const collectForEmbedding = (
   }
 }
 
+// An empty \va names no verse: its text stays where it is.
+const startsVerse = (o: USFMVerseObject) =>
+  o.tag === "va" && Boolean(o.content?.trim())
+
+// Whitespace, or the zero-width space an empty \q1 is given.
+const isBlank = (o: USFMVerseObject) =>
+  (o.type === "text" || o.type === "quote" || o.type === "paragraph") &&
+  !(o.text ?? o.nextChar ?? "").replace(/\u200B/g, "").trim()
+
 const compareVerseLabels = (
   a: [string, USFMVerse],
   b: [string, USFMVerse],
@@ -111,7 +120,7 @@ export const storeChapter = async (
 
     // \va gives an alternative verse number (Zc 4 reordered, Sir 51's lettered
     // litany): each one starts a verse of its own, labelled with it.
-    if (verse.verseObjects.some((o) => o.tag === "ms" || o.tag === "va")) {
+    if (verse.verseObjects.some((o) => o.tag === "ms" || startsVerse(o))) {
       let objectsForVerse: USFMVerseObject[] = []
       verseNumber = key === "front" ? 0 : verseNumber
       // A range ("8-9") is spelled out by its \va pieces.
@@ -121,15 +130,17 @@ export const storeChapter = async (
       let extraForVerse = verse.extra
 
       for (const verseObject of Object.values(verse.verseObjects)) {
-        // An empty \va names no verse: its text stays where it is.
-        if (verseObject.tag === "va" && verseObject.content?.trim()) {
+        if (startsVerse(verseObject)) {
           // An empty \q1 just before the \va indents the verse it starts.
           const last = objectsForVerse.at(-1)
           const carriedQuote =
-            last?.type === "quote" && !last.text?.trim()
+            last?.type === "quote" && isBlank(last)
               ? objectsForVerse.pop()
               : undefined
-          if (labelForVerse !== "") {
+          // Nothing but blanks before the first \va (\v 5 \va 6\va*): that
+          // \va is the verse, so its label replaces the \v one.
+          const hasText = key === "front" || !objectsForVerse.every(isBlank)
+          if (labelForVerse !== "" && hasText) {
             const verseData = /* NOSONAR */ await storeInOrder(client, {
               bookId: bookCode,
               bookNumber,

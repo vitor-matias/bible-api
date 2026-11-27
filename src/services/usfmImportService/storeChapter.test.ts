@@ -162,4 +162,33 @@ describe("storeChapter", () => {
     assert.equal(litany.text[0].type, "quote")
     assert.equal(litany.text[0].text, "​")
   })
+
+  it("lets a \\va that opens its verse name it, and keeps a range whose \\va is empty", async () => {
+    const book = usfm.toJSON(String.raw`\id ZEC
+\c 1
+\v 1 Primeiro.
+\q1
+\v 2 \va 2a\va* Segundo.
+\v 3 Terceiro.
+\v 4-5 Porque eis a pedra \va \va*e afastarei.
+`)
+    const fake = createFakeRedis()
+    const { pool } = capturingPool()
+    await storeChapter(fake.client, "zec", 38, 1, book.chapters["1"], pool)
+
+    const verse = (n: number) => fake.json.get(`verse:zec:1:${n}`) as Verse
+    assert.deepEqual(
+      [1, 2, 3, 4].map((n) => verse(n).numberLabel),
+      ["1", "2a", "3", "4-5"],
+    )
+    assert.equal(fake.json.has("verse:zec:1:5"), false)
+    // The empty \q1 before \v 2 still indents it.
+    assert.equal(verse(2).text[0].type, "quote")
+    assert.match(
+      verse(4)
+        .text.map((t) => t.text)
+        .join(""),
+      /pedra.*afastarei/,
+    )
+  })
 })
