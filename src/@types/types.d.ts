@@ -11,8 +11,12 @@ type USFMBook = {
 }
 
 type USFMHeader = {
-  tag: string
+  // Absent on a line that continues the header before it: usfm-js hands it
+  // over as { type: "text", text }.
+  tag?: string
   content?: string
+  type?: string
+  text?: string
 }
 
 type USFMChapter = {
@@ -22,6 +26,10 @@ type USFMChapter = {
 
 type USFMVerse = {
   verseObjects: USFMVerseObject[]
+  // The printed verse number when it is not the key (an addition's "B1").
+  label?: string
+  // Fields the stored verse carries besides its text.
+  extra?: Partial<Verse>
 }
 
 type Footnote = {
@@ -43,6 +51,8 @@ type USFMVerseObject = {
   endTag?: string
   text?: string
   nextChar?: string
+  // On a heading inside a Greek supplement (see greekAdditions.ts).
+  supplement?: boolean
 }
 
 type Book = {
@@ -51,8 +61,73 @@ type Book = {
   shortName: string
   abrv: string
   chapterCount: number
+  introduction?: IntroElement[]
   chapters?: Chapter[]
 }
+
+type IntroElement =
+  | IntroTitle
+  | IntroParagraph
+  | IntroSection
+  | IntroOutline
+  | IntroTable
+  | IntroListItem
+  | IntroSidebar
+  | IntroMajorSection
+
+// The prose of a text-bearing intro element, with any notes the source attached
+// to it lifted out into their own list rather than left inline as markup.
+type IntroText = {
+  text: string
+  footnotes?: _Footnote[]
+}
+
+type IntroTitle = IntroText & {
+  type: "introTitle"
+  level: 1 | 2
+}
+
+type IntroParagraph = IntroText & {
+  type: "introParagraph"
+}
+
+type IntroSection = IntroText & {
+  type: "introSection"
+  level: 1 | 2
+}
+
+type IntroOutline = IntroText & {
+  type: "introOutline"
+}
+
+type IntroTable = {
+  type: "introTable"
+  rows: string[][]
+}
+
+type IntroListItem = IntroText & {
+  type: "introListItem"
+}
+
+type IntroSidebar = {
+  type: "introSidebar"
+  content: IntroElement[]
+}
+
+type IntroMajorSection = IntroText & {
+  type: "introMajorSection"
+}
+
+// Front-matter introductions (USFM \id FRT / INT). Stored outside the book
+// namespace because every such file shares one id, and outside every search
+// index because introductions are not search content.
+type BookIntro = {
+  slug: string
+  name: string
+  introduction: IntroElement[]
+}
+
+type IntroSummary = Pick<BookIntro, "slug" | "name">
 
 type Chapter = {
   bookId: Book["id"]
@@ -67,6 +142,17 @@ type Verse = {
   chapterNumber: Chapter["number"]
   number: number
   numberLabel: string
+  // Set on verse 0 of a chapter that opens with a supplement ("A"): the
+  // chapter mark printed there instead of the chapter number.
+  chapterLabel?: string
+  // Set on the last verse of such a supplement: the chapter number is printed
+  // at the heading it ends with, where the numbered text starts.
+  chapterNumberStarts?: boolean
+  // Set on the verse a supplement in mid-chapter ("C") opens at: the letter is
+  // printed at its closing heading, or its first line when it has none.
+  supplementLetter?: string
+  // Set on the verses of a supplement, which the printed edition sets in italics.
+  supplement?: boolean
   text: (_Text | Section | Paragraph | Quote | References | _Footnote)[]
   searchId: string
 }
@@ -76,6 +162,9 @@ type Section = {
   tag: string
   text: string
   normalizedText: string
+  // A heading inside a Greek supplement: the printed edition sets it black,
+  // bold and italic, where the main text's headings are red.
+  supplement?: boolean
 }
 
 type _Text = {

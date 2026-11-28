@@ -1,6 +1,47 @@
 import type { createClient } from "redis"
-import { generateEmbeddings } from "../openai/embeddings"
+import type { TaskPool } from "../../util/concurrency"
+import { EMBEDDING_KEY_PREFIX } from "../../util/embeddingIndex"
+import { toFloat32Buffer } from "../../util/vectorBuffer"
+import { chapterVerseMaxKey } from "../chapter/verseCountKey"
+import { verseKey } from "../verse/getVerse"
+import { generateChapterEmbeddings } from "../voyage/embeddings"
+import { chapterDocument, saveChapterOutline } from "./chapterDocument"
 import { extractVerseText, storeVerse } from "./storeVerse"
+
+// Chapters whose embeddings failed transiently, as "bookId:chapter" members.
+// Persisted in Redis (and cleared by flushDatabase with everything else) so a
+// later start can re-embed just these chapters instead of reimporting the
+// whole corpus; semantic search stays disabled while the set is non-empty.
+export const EMBEDDING_FAILURES_KEY = "embeddingFailures"
+
+export type VerseForEmbedding = {
+  verseData: Verse
+  text: string
+}
+
+// Single definition of what qualifies for the semantic index: real verses
+// (verse 0 is the "front" pseudo-verse) that carry some text.
+export const collectForEmbedding = (
+  versesData: VerseForEmbedding[],
+  verseData: Verse,
+  verseNumber: number,
+): void => {
+  if (verseNumber <= 0) return
+
+  const text = extractVerseText(verseData)
+  if (text.trim().length > 0) {
+    versesData.push({ verseData, text })
+  }
+}
+
+// An empty \va names no verse: its text stays where it is.
+const startsVerse = (o: USFMVerseObject) =>
+  o.tag === "va" && Boolean(o.content?.trim())
+
+// Whitespace, or the zero-width space an empty \q1 is given.
+const isBlank = (o: USFMVerseObject) =>
+  (o.type === "text" || o.type === "quote" || o.type === "paragraph") &&
+  !(o.text ?? o.nextChar ?? "").replace(/\u200B/g, "").trim()
 
 const compareVerseLabels = (
   a: [string, USFMVerse],
@@ -25,20 +66,30 @@ export const storeChapter = async (
   bookNumber: number,
   chapterNumber: number,
   chapter: USFMChapter,
+  embeddings: TaskPool,
 ): Promise<void> => {
   let verseNumber = 1
-  const versesData: {
-    verseData: Verse
-    text: string
-  }[] = []
+  const versesData: VerseForEmbedding[] = []
+  // Every verse as stored, verse 0 included, in order: the chapter's section
+  // outline is read from them.
+  const storedVerses: Verse[] = []
+  const storeInOrder = async (...args: Parameters<typeof storeVerse>) => {
+    const verseData = await storeVerse(...args)
+    storedVerses.push(verseData)
+    return verseData
+  }
 
   // Tracks an empty quote (like \q1) that appears at the end of a verse, so it can
   // be applied to the beginning of the next verse.
   let pendingQuote: USFMVerseObject | null = null
 
-  for (const [verseLabel, verse] of Object.entries(chapter).sort(
-    compareVerseLabels,
-  )) {
+  const verseEntries = Object.entries(chapter).sort(compareVerseLabels)
+
+  // Sequential on purpose: each verse's number, the empty quote carried into
+  // the next verse and the order the section outline is read in all depend on
+  // storing the verses one at a time, in order.
+  for (const [index, [key, verse]] of verseEntries.entries()) {
+    const verseLabel = verse.label ?? key
     // If the previous verse ended with an empty quote block, apply its tag
     // to the first object of the current verse if it's plain text.
     // USFM authors sometimes place a quote tag (e.g. \q1) before a verse marker (\v)
@@ -53,7 +104,10 @@ export const storeChapter = async (
     // Check if the current verse ends with an empty quote block.
     // If so, remove it from this verse and save it as pending
     // so it can be applied to the beginning of the next verse instead.
-    if (verse.verseObjects.length > 0) {
+    // The last verse keeps its trailing quote: there is no next verse to move
+    // it to, and stashing it there would drop it entirely.
+    const hasNextVerse = index < verseEntries.length - 1
+    if (hasNextVerse && verse.verseObjects.length > 0) {
       const lastObj = verse.verseObjects[verse.verseObjects.length - 1]
       if (
         lastObj.type === "quote" &&
@@ -64,127 +118,174 @@ export const storeChapter = async (
       }
     }
 
-    if (verse.verseObjects.some((verseObject) => verseObject.tag === "ms")) {
+    // \va gives an alternative verse number (Zc 4 reordered, Sir 51's lettered
+    // litany): each one starts a verse of its own, labelled with it.
+    if (verse.verseObjects.some((o) => o.tag === "ms" || startsVerse(o))) {
       let objectsForVerse: USFMVerseObject[] = []
-      verseNumber = verseLabel === "front" ? 0 : verseNumber
-      let labelForVerse = verseLabel.includes("-") ? "" : verseNumber.toString()
+      verseNumber = key === "front" ? 0 : verseNumber
+      // A range ("8-9") is spelled out by its \va pieces.
+      let labelForVerse = key === "front" ? "0" : verseLabel
+      if (verseLabel.includes("-")) labelForVerse = ""
+      // Only the first piece is the verse the parser gave us.
+      let extraForVerse = verse.extra
 
       for (const verseObject of Object.values(verse.verseObjects)) {
-        if (verseObject.tag === "va") {
-          if (labelForVerse !== "") {
-            const verseData = await storeVerse(
-              client,
-              bookCode,
+        if (startsVerse(verseObject)) {
+          // An empty \q1 just before the \va indents the verse it starts.
+          const last = objectsForVerse.at(-1)
+          const carriedQuote =
+            last?.type === "quote" && isBlank(last)
+              ? objectsForVerse.pop()
+              : undefined
+          // Nothing but blanks before the first \va (\v 5 \va 6\va*): that
+          // \va is the verse, so its label replaces the \v one.
+          const hasText = key === "front" || !objectsForVerse.every(isBlank)
+          if (labelForVerse !== "" && hasText) {
+            const verseData = /* NOSONAR */ await storeInOrder(client, {
+              bookId: bookCode,
               bookNumber,
               chapterNumber,
               verseNumber,
-              labelForVerse,
-              objectsForVerse,
-            )
-            if (verseNumber > 0) {
-              const text = extractVerseText(verseData)
-              if (text.trim().length > 0) {
-                versesData.push({ verseData, text })
-              }
-            }
+              verseLabel: labelForVerse,
+              verseObjects: objectsForVerse,
+              extra: extraForVerse,
+            })
+            collectForEmbedding(versesData, verseData, verseNumber)
+            extraForVerse = undefined
             objectsForVerse = []
-
             verseNumber++
           }
-          labelForVerse = verseObject?.content as string
+          if (carriedQuote) {
+            objectsForVerse.push({ ...carriedQuote, text: "\u200B" })
+          }
+          labelForVerse = (verseObject.content ?? "").trim()
         } else {
           objectsForVerse.push(verseObject)
         }
       }
 
       if (labelForVerse !== "") {
-        const verseData = await storeVerse(
-          client,
-          bookCode,
+        const verseData = /* NOSONAR */ await storeInOrder(client, {
+          bookId: bookCode,
           bookNumber,
           chapterNumber,
           verseNumber,
-          labelForVerse,
-          objectsForVerse,
-        )
-        if (verseNumber > 0) {
-          const text = extractVerseText(verseData)
-          if (text.trim().length > 0) {
-            versesData.push({ verseData, text })
-          }
-        }
+          verseLabel: labelForVerse,
+          verseObjects: objectsForVerse,
+          extra: extraForVerse,
+        })
+        collectForEmbedding(versesData, verseData, verseNumber)
         verseNumber++
       }
-    } else if (verseLabel !== "front") {
-      const verseData = await storeVerse(
-        client,
-        bookCode,
+    } else if (key !== "front") {
+      const verseData = /* NOSONAR */ await storeInOrder(client, {
+        bookId: bookCode,
         bookNumber,
         chapterNumber,
         verseNumber,
         verseLabel,
-        verse.verseObjects,
-      )
-      if (verseNumber > 0) {
-        const text = extractVerseText(verseData)
-        if (text.trim().length > 0) {
-          versesData.push({ verseData, text })
-        }
-      }
+        verseObjects: verse.verseObjects,
+        extra: verse.extra,
+      })
+      collectForEmbedding(versesData, verseData, verseNumber)
       verseNumber++
     } else {
-      await storeVerse(
-        client,
-        bookCode,
+      /* NOSONAR */ await storeInOrder(client, {
+        bookId: bookCode,
         bookNumber,
         chapterNumber,
-        0,
+        verseNumber: 0,
         verseLabel,
-        verse.verseObjects,
-      )
+        verseObjects: verse.verseObjects,
+        extra: verse.extra,
+      })
     }
   }
   if (chapter.front === null) {
-    await storeVerse(
-      client,
-      bookCode,
+    await storeInOrder(client, {
+      bookId: bookCode,
       bookNumber,
       chapterNumber,
-      0,
-      "front",
-      [],
-    )
+      verseNumber: 0,
+      verseLabel: "front",
+      verseObjects: [],
+    })
   }
 
-  // Generate embeddings in batch for all verses in the chapter
+  // Record the chapter's highest verse number so getChapter can address the
+  // verse keys directly instead of scanning the keyspace for them.
+  await client.set(
+    chapterVerseMaxKey(bookCode, chapterNumber),
+    String(Math.max(0, verseNumber - 1)),
+  )
+
+  // Before the chapter's embedding is queued: its document reads the outline.
+  await saveChapterOutline(client, bookCode, chapterNumber, storedVerses)
+
+  // The chapter's verses are embedded in one batch, in the background: the
+  // import goes on storing later chapters instead of waiting on the API. The
+  // caller drains the pool before it reads the failure set.
   if (versesData.length > 0) {
-    const texts = versesData.map((v) => v.text)
-
-    console.log(
-      `Generating embeddings for chapter ${chapterNumber} with ${texts.length} verses...`,
-    )
-    try {
-      const embeddings = await generateEmbeddings(texts)
-
-      // Store all embeddings
-      for (let i = 0; i < versesData.length; i++) {
-        const v = versesData[i].verseData
-        if (embeddings[i] && embeddings[i].length > 0) {
-          await client.json.set(
-            `embedding:${v.bookId}:${v.chapterNumber}:${v.number}`,
-            "$",
-            {
-              key: `verse:${v.bookId}:${v.chapterNumber}:${v.number}`,
-              embedding: embeddings[i],
-            },
-          )
-        }
-      }
-    } catch (error) {
-      console.error(
-        `Failed to generate embeddings for chapter ${chapterNumber}:`,
-        error,
+    embeddings.submit(async () => {
+      console.log(
+        `Generating embeddings for ${bookCode} ${chapterNumber} with ${versesData.length} verses...`,
       )
-    }
+      try {
+        await embedAndStoreVerses(client, versesData)
+      } catch (error) {
+        // Never stop the import over embeddings: the primary data matters
+        // more. The chapter is recorded and re-embedded on a later start, and
+        // semantic search stays disabled until then.
+        console.error(
+          `Failed to generate embeddings for ${bookCode} ${chapterNumber}:`,
+          error,
+        )
+        await client.sAdd(
+          EMBEDDING_FAILURES_KEY,
+          `${bookCode}:${chapterNumber}`,
+        )
+      }
+    })
   }
+}
+
+// Embeds a chapter's verses in one Voyage call and writes the vectors in one
+// pipelined round trip. Throws if either step fails.
+export const embedAndStoreVerses = async (
+  client: ReturnType<typeof createClient>,
+  versesData: VerseForEmbedding[],
+): Promise<void> => {
+  const embeddings = await generateChapterEmbeddings(
+    await chapterDocument(client, versesData),
+  )
+
+  // generateChapterEmbeddings leaves [] for any entry the API response
+  // lacked. Writing the rest would count the chapter as embedded while some
+  // verses have no vector, so treat a partial response as a failure before
+  // writing anything.
+  const missing = versesData.filter((_, i) => !embeddings[i]?.length).length
+  if (missing > 0) {
+    throw new Error(
+      `Embedding response was missing vectors for ${missing} of ${versesData.length} verses`,
+    )
+  }
+
+  // Each vector is kept as its raw float32 bytes in a hash: RedisJSON would
+  // spend ~27 bytes per number, turning a 4 KB vector into ~27 KB. A vector
+  // of the wrong length makes toFloat32Buffer throw, so the chapter counts as
+  // an embedding failure instead of being stored unindexed. Encoding
+  // everything before queueing keeps a bad vector from leaving a half-written
+  // chapter.
+  const multi = client.multi()
+  for (let i = 0; i < versesData.length; i++) {
+    const v = versesData[i].verseData
+    multi.hSet(
+      `${EMBEDDING_KEY_PREFIX}${v.bookId}:${v.chapterNumber}:${v.number}`,
+      {
+        key: verseKey(v.bookId, v.chapterNumber, v.number),
+        embedding: toFloat32Buffer(embeddings[i]),
+      },
+    )
+  }
+  await multi.exec()
 }

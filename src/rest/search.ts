@@ -1,6 +1,11 @@
 import type { Request, Response } from "express"
 import { searchVerses } from "../services/search/searchVerses"
-import { semanticSearchVerses } from "../services/search/semanticSearch"
+import {
+  KNN_MAX_RESULTS,
+  semanticSearchVerses,
+} from "../services/search/semanticSearch"
+import { getEmbeddingIndexInfo } from "../util/embeddingIndex"
+import { isSemanticSearchAvailable } from "../util/importState"
 import { normalizeText } from "../util/normalizeText"
 
 export const searchVersesController = async (req: Request, res: Response) => {
@@ -8,34 +13,77 @@ export const searchVersesController = async (req: Request, res: Response) => {
 
   const { text, page = "1", limit = "10", semantic } = req.query
 
+  // validateSearchParams puts the trimmed text on res.locals; req.query still
+  // holds the raw value because Express 5 rebuilds it on every access.
+  const searchText =
+    (res.locals.searchText as string | undefined) ?? (text as string)
+
   // Parse parameters (validation already done in middleware)
   const pageNumber = Number.parseInt(page as string, 10)
   const limitNumber = Number.parseInt(limit as string, 10)
 
   if (semantic === "true") {
+    // The vector index covers only part of the corpus (failed chapters, or
+    // vectors it skipped). Answering anyway would look like a complete result set.
+    if (!isSemanticSearchAvailable()) {
+      return res.status(503).json({
+        error:
+          "Semantic search is unavailable: the embedding index is incomplete",
+      })
+    }
+
+    // Past the KNN window the service can only answer with zeroed totals,
+    // which reads as "no matches" rather than "beyond the search window".
+    if ((pageNumber - 1) * limitNumber >= KNN_MAX_RESULTS) {
+      return res.status(400).json({
+        error: `Semantic search returns at most ${KNN_MAX_RESULTS} results; the requested page is beyond that window`,
+      })
+    }
+
     try {
+      // After a Redis restart RediSearch rebuilds the vector index in the
+      // background, and KNN answers from whatever it has indexed so far —
+      // often nothing — without any error. Checked before the Voyage call.
+      if (Number((await getEmbeddingIndexInfo(client)).indexing) > 0) {
+        return res.status(503).json({
+          error:
+            "Semantic search is unavailable: the embedding index is rebuilding",
+        })
+      }
+
       const result = await semanticSearchVerses(
         client,
-        text as string,
+        searchText,
         pageNumber,
         limitNumber,
       )
+      // A nearest-neighbour query over a complete index always has
+      // neighbours, so none means the index is not usable right now.
+      // Answering 200 [] would be cached as "no matches" (here and by any
+      // proxy) and outlive the outage.
+      if (result.total === 0) {
+        return res.status(503).json({
+          error: "Semantic search is unavailable: the embedding index is empty",
+        })
+      }
       return res.json(result)
     } catch (error) {
       console.error("Semantic search error:", error)
-      return res.status(500).json({
-        error: "Semantic search failed",
-        details: "An internal error occurred",
-      })
+      return res.status(500).json({ error: "Semantic search failed" })
     }
   } else {
-    res.json(
-      await searchVerses(
-        client,
-        normalizeText(text as string),
-        pageNumber,
-        limitNumber,
-      ),
-    )
+    try {
+      res.json(
+        await searchVerses(
+          client,
+          normalizeText(searchText),
+          pageNumber,
+          limitNumber,
+        ),
+      )
+    } catch (error) {
+      console.error("Search error:", error)
+      return res.status(500).json({ error: "Search failed" })
+    }
   }
 }
