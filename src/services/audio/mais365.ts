@@ -34,6 +34,7 @@ const ALIASES: Record<string, string[]> = {
   exo: ["a exodo", "a isodo", "autodo", "eis o do"],
   deu: ["patinomio"],
   zec: ["ascarias"],
+  tob: ["tubite"],
 }
 
 // Readers say "2º Livro dos Reis 25" or "Segundo o livro das Crónicas, 36"
@@ -501,6 +502,41 @@ export const findTitle = (
  * Further back is the silence before a short jingle (Dia 191: 1 s of it
  * before «Segundo Livro das Crónicas»), not before the voice.
  */
+/**
+ * Where a reading's heading begins when it was said just before `start`
+ * (within `reach` seconds), as the last words heard: the start placed from
+ * its first verse, past a heading said mid-segment («… Zacarias 12»).
+ */
+export const headingBefore = (
+  words: { start: number; text: string }[],
+  start: number,
+  { bookId, chapter }: Reading,
+  books: BookName[],
+  reach = 4,
+): number | undefined => {
+  const book = books.find((b) => b.id === bookId)
+  if (!book) return undefined
+  const headings = namesOf(book).map((name) => `${name} ${chapter}`)
+  const near = words.filter(
+    (word) => word.start >= start - reach && word.start < start,
+  )
+  // The longest run of last words that is the heading: «Segundo Livro dos Reis 17».
+  for (let i = Math.max(0, near.length - 6); i < near.length; i++) {
+    const said = arabicTail(
+      asShortName(
+        normalize(
+          near
+            .slice(i)
+            .map((word) => word.text)
+            .join(" "),
+        ),
+      ),
+    )
+    if (headings.includes(said)) return near[i].start
+  }
+  return undefined
+}
+
 export const ONSET_REACH = 0.5
 
 /**
@@ -536,4 +572,45 @@ export const voiceOnset = (
     }
   }
   return at
+}
+
+/**
+ * Where the voice comes in after a start that lies in silence: the heading's
+ * segment can begin seconds before it is said (Génesis 16 on Dia 8 started
+ * on the jingle's fading tail, then 4.6 s of silence before «Génesis 16»).
+ * `levels` are dB over `frame`-second frames from `at`. Moved when the first
+ * 0.3 s after `at` are silent (under -50 dB), or when a silence of 2.5 s or
+ * more (under -55 dB) begins within 3 s of it: past the jingle's tail too,
+ * but not past a heading's own pause before verse 1, which is shorter. Then
+ * to 50 ms before the first frame over -45 dB after that silence; not at
+ * all if that is past `until`: the first word heard after `at`, or verse 1.
+ * A heading before a long pause («Êxodo 19», then 3 s) is that first word.
+ */
+export const voiceAfterSilence = (
+  levels: number[],
+  frame: number,
+  at: number,
+  until: number,
+): number => {
+  const count = (seconds: number) => Math.max(1, Math.round(seconds / frame))
+  let silent = -1
+  if (
+    levels.length >= count(0.3) &&
+    levels.slice(0, count(0.3)).every((db) => db <= -50)
+  ) {
+    silent = 0
+  } else {
+    const long = count(2.5)
+    for (let i = 0; i <= Math.min(count(3), levels.length - long); i++) {
+      if (levels.slice(i, i + long).every((db) => db <= -55)) {
+        silent = i
+        break
+      }
+    }
+  }
+  if (silent < 0) return at
+  const voice = levels.findIndex((db, i) => i >= silent && db > -45)
+  if (voice < 0) return at
+  const moved = Math.round((at + voice * frame - 0.05) * 100) / 100
+  return moved > until ? at : Math.max(at, moved)
 }

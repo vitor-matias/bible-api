@@ -28,6 +28,8 @@ import {
   pastHeadingPause,
   type Reading,
   type Segment,
+  headingBefore,
+  voiceAfterSilence,
   voiceOnset,
 } from "../services/audio/mais365"
 import { mapWithConcurrency } from "../util/concurrency"
@@ -73,6 +75,12 @@ const execAsync = promisify(execFile)
 // Where a reading starts, by day, when its heading is never said and its
 // first verse can't be found in the transcript (numbers spoken as numerals).
 const START_FIXES: Record<number, Record<string, number>> = {
+  // Found on the day's announcement, which names the reading: its own
+  // heading («Segundo Livro dos Reis 17», «Neemias 11») comes after it, and
+  // Números 23 has none, read straight on with «Então Balaão…».
+  71: { "num 23": 57.4 },
+  183: { "2ki 17": 50.9 },
+  279: { "neh 11": 49.3 },
   // «No 18º ano…», straight on from Judite 1.
   246: { "jdt 2": 655.6 },
 }
@@ -799,6 +807,33 @@ const timeDay = async (
     // before), and never before that reading's end.
     const timed = planned.at(-1)?.episode
     const before = planned.at(-2)?.episode.end ?? 0
+    // Its heading, when said just before the start (placed from its first
+    // verse): «Zacarias 12» at a segment's end. Never before the reading before.
+    if (timed?.start != null && starts[i] !== undefined) {
+      const heading = headingBefore(
+        transcript.words,
+        timed.start,
+        reading,
+        run.books,
+      )
+      if (heading !== undefined && heading > before) timed.start = heading
+    }
+    // On past silence first: a heading's segment can start seconds before
+    // the name is said.
+    const firstVerse = timed?.verses?.find(([number]) => number > 0)?.[1]
+    if (timed?.start != null && starts[i] !== undefined && firstVerse != null) {
+      // Nor past the first word heard: a heading before a long pause.
+      const start = timed.start
+      const firstWord = transcript.words.find(
+        (word) => word.start > start + 0.05,
+      )?.start
+      timed.start = voiceAfterSilence(
+        levelsFrom(guid, url, start, firstVerse - start),
+        ONSET_FRAME,
+        start,
+        Math.min(firstVerse - 0.3, firstWord ?? Number.POSITIVE_INFINITY),
+      )
+    }
     if (timed?.start != null && starts[i] !== undefined) {
       const from = timed.start - ONSET_REACH
       const onset = voiceOnset(

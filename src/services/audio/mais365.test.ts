@@ -2,15 +2,18 @@ import assert from "node:assert/strict"
 import { describe, it } from "node:test"
 import {
   type BookName,
+  type Reading,
   findChapterEnd,
   findChapterOpening,
   findChapterStarts,
   findReadingStart,
   findTitle,
+  headingBefore,
   losesWords,
   mergePlan,
   parseReadings,
   pastHeadingPause,
+  voiceAfterSilence,
   voiceOnset,
 } from "./mais365"
 
@@ -805,5 +808,68 @@ describe("voiceOnset", () => {
     // The gap ends 0.02 s past Whisper's time.
     const late = [-18, -18, -60, -60, -60, -60, -18, -18, -18]
     assert.equal(voiceOnset(late, 0.02, 486.6, 486.68), 486.68)
+  })
+})
+
+describe("voiceAfterSilence", () => {
+  // Dia 8 in 0.1 s frames from 62 s: silent until «Génesis 16» at 63.6.
+  const dia8 = [...Array(16).fill(-99), -31.2, -20.4, -19.4, -18.9]
+
+  it("goes on past silence to just before the voice", () => {
+    assert.equal(voiceAfterSilence(dia8, 0.1, 62, 66.4), 63.55)
+  })
+
+  it("leaves a start on sound (the jingle, or the voice) alone", () => {
+    assert.equal(voiceAfterSilence([-30, ...dia8], 0.1, 62, 66.4), 62)
+  })
+
+  it("stays put rather than go past the first word or verse 1", () => {
+    assert.equal(voiceAfterSilence(dia8, 0.1, 62, 63), 62)
+  })
+
+  // Dia 38: «Êxodo 19», 3 s of silence, then verse 1: the heading is the
+  // first word heard, and the start stays before it.
+  it("keeps a heading said before a long pause", () => {
+    const exodus = [-20, -19, -21, ...Array(30).fill(-99), -18, -17]
+    assert.equal(voiceAfterSilence(exodus, 0.1, 53.66, 54.2), 53.66)
+  })
+
+  // Its real start, 56.96: the jingle's tail fading out, then the silence.
+  const fading = [
+    -38.7, -41.6, -44.2, -45.6, -48.5, -51.2, -53.6, -53.6, -56.5, -64.9,
+  ]
+
+  it("goes on past the jingle's tail and a long silence after it", () => {
+    assert.equal(voiceAfterSilence([...fading, ...dia8], 0.2, 0, 10), 5.15)
+  })
+
+  it("keeps a heading followed by its own pause before verse 1", () => {
+    // «Génesis 16», 1.5 s of silence, then «Sarai».
+    const heading = [-20, -19, -21, -20, -22, ...Array(15).fill(-99), -20]
+    assert.equal(voiceAfterSilence(heading, 0.1, 0, 3), 0)
+  })
+})
+
+describe("headingBefore", () => {
+  const zec: BookName = { id: "zec", shortName: "Zacarias", chapterCount: 14 }
+  const reading = { bookId: "zec", chapter: 12 } as Reading
+  // Dia 272: «Zacarias 12» ends a segment; the start was its first verse.
+  const words = [
+    { start: 392.1, text: " Senhor." },
+    { start: 393.6, text: " Zacarias" },
+    { start: 394.7, text: " 12" },
+    { start: 395.9, text: " Oráculo" },
+  ]
+
+  it("finds the heading said as the last words before the start", () => {
+    assert.equal(headingBefore(words, 395.75, reading, [zec]), 393.6)
+  })
+
+  it("leaves it when other words follow the heading, or none was said", () => {
+    assert.equal(headingBefore(words, 397, reading, [zec]), undefined)
+    assert.equal(
+      headingBefore(words, 395.75, { ...reading, chapter: 11 }, [zec]),
+      undefined,
+    )
   })
 })
