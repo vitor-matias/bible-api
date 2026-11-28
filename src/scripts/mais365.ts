@@ -23,10 +23,12 @@ import {
   findTitle,
   losesWords,
   mergePlan,
+  ONSET_REACH,
   parseReadings,
   pastHeadingPause,
   type Reading,
   type Segment,
+  voiceOnset,
 } from "../services/audio/mais365"
 import { mapWithConcurrency } from "../util/concurrency"
 
@@ -184,6 +186,37 @@ const pausesFrom = (
     from + Number(starts[i]?.[1] ?? 0),
     from + Number(end[1]),
   ])
+}
+
+/** The level (dB) of each 20 ms of the audio from `from`, for `length` s. */
+const ONSET_FRAME = 0.02
+const levelsFrom = (
+  guid: string,
+  url: string,
+  from: number,
+  length: number,
+): number[] => {
+  const rate = 8000
+  const raw = spawnSync(
+    FFMPEG,
+    ["-v", "error", "-ss", String(from), "-t", String(length)]
+      .concat(["-i", cachedAudio(guid) ?? url])
+      .concat(["-ac", "1", "-ar", String(rate), "-f", "f32le", "-"]),
+    { maxBuffer: 1 << 24 },
+  ).stdout
+  const samples = new Float32Array(
+    raw.buffer,
+    raw.byteOffset,
+    Math.floor(raw.byteLength / 4),
+  )
+  const size = Math.round(rate * ONSET_FRAME)
+  const levels: number[] = []
+  for (let i = 0; i + size <= samples.length; i += size) {
+    let sum = 0
+    for (let j = i; j < i + size; j++) sum += samples[j] * samples[j]
+    levels.push(10 * Math.log10(sum / size + 1e-12))
+  }
+  return levels
 }
 
 /** An episode's audio, if an earlier run kept it. */
@@ -761,6 +794,21 @@ const timeDay = async (
       )),
       ...READING_NAMES[day]?.[`${reading.bookId} ${reading.chapter}`],
     })
+    // Back to where the voice comes in: Whisper times the first word after
+    // the jingle late. Its own heading only (not read on from the reading
+    // before), and never before that reading's end.
+    const timed = planned.at(-1)?.episode
+    const before = planned.at(-2)?.episode.end ?? 0
+    if (timed?.start != null && starts[i] !== undefined) {
+      const from = timed.start - ONSET_REACH
+      const onset = voiceOnset(
+        levelsFrom(guid, url, from, ONSET_REACH + 0.3),
+        ONSET_FRAME,
+        from,
+        timed.start,
+      )
+      timed.start = Math.max(Math.min(before, timed.start), onset)
+    }
   }
   const lastEnd = planned.at(-1)?.episode.end
   if (lastEnd == null) run.problems.push(`Dia ${day}: no reflection start`)
