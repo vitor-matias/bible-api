@@ -57,11 +57,11 @@ export const searchVersesController = async (req: Request, res: Response) => {
         pageNumber,
         limitNumber,
       )
-      // A nearest-neighbour query over a complete index always has
-      // neighbours, so none means the index is not usable right now.
-      // Answering 200 [] would be cached as "no matches" (here and by any
-      // proxy) and outlive the outage.
-      if (result.total === 0) {
+      // null: the KNN found no neighbours at all, so the index is not usable
+      // right now. Answering 200 [] would be cached as "no matches" (here and
+      // by any proxy) and outlive the outage. An empty page (no relevant
+      // match on a healthy index) is a real answer.
+      if (result === null) {
         return res.status(503).json({
           error: "Semantic search is unavailable: the embedding index is empty",
         })

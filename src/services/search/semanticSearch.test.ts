@@ -6,6 +6,7 @@ import {
   capPerChapter,
   KNN_MAX_RESULTS,
   MAX_VERSES_PER_CHAPTER,
+  MIN_SIMILARITY,
   semanticSearchVerses,
 } from "./semanticSearch"
 
@@ -78,6 +79,13 @@ describe("capPerChapter", () => {
   })
 })
 
+// The search's page, failing the test where it answered null (no neighbours).
+const pageOf = async (...args: Parameters<typeof semanticSearchVerses>) => {
+  const page = await semanticSearchVerses(...args)
+  assert.ok(page, "expected a page, not null")
+  return page
+}
+
 describe("semanticSearchVerses", () => {
   let stub: Awaited<ReturnType<typeof startVoyageStub>>
 
@@ -108,9 +116,10 @@ describe("semanticSearchVerses", () => {
       calls.push({ query, options: options as Options })
       return {
         total: keys.length,
-        documents: keys.map((verseKey) =>
-          verseKey.replace("verse:", "embedding:"),
-        ),
+        documents: keys.map((verseKey) => ({
+          id: verseKey.replace("verse:", "embedding:"),
+          value: {},
+        })),
       }
     })
     for (const verseKey of keys) {
@@ -130,8 +139,8 @@ describe("semanticSearchVerses", () => {
   it("caps each chapter at two verses before paging", async () => {
     const { client, calls } = await searchOver(ranked)
 
-    const first = await semanticSearchVerses(client, "amar o próximo", 1, 2)
-    const second = await semanticSearchVerses(client, "amar o próximo", 2, 2)
+    const first = await pageOf(client, "amar o próximo", 1, 2)
+    const second = await pageOf(client, "amar o próximo", 2, 2)
 
     assert.deepEqual(refs(first), ["rom 13:8", "rom 13:9"])
     assert.deepEqual(refs(second), ["mrk 12:31", "lev 19:18"])
@@ -148,7 +157,7 @@ describe("semanticSearchVerses", () => {
   it("derives the verse key from the embedding id", async () => {
     const fake = createFakeRedis(() => ({
       total: 1,
-      documents: ["embedding:rom:13:8"],
+      documents: [{ id: "embedding:rom:13:8", value: { score: "0.3" } }],
     }))
     await fake.client.json.set("verse:rom:13:8", "$", {
       bookId: "rom",
@@ -156,7 +165,7 @@ describe("semanticSearchVerses", () => {
       number: 8,
     })
 
-    const page = await semanticSearchVerses(fake.client, "amar", 1, 10)
+    const page = await pageOf(fake.client, "amar", 1, 10)
 
     assert.deepEqual(refs(page), ["rom 13:8"])
   })
@@ -165,20 +174,115 @@ describe("semanticSearchVerses", () => {
     const many = Array.from({ length: 150 }, (_, i) => key("psa", i + 1, 1))
     const { client } = await searchOver(many)
 
-    const page = await semanticSearchVerses(client, "louvor", 1, 10)
+    const page = await pageOf(client, "louvor", 1, 10)
 
     assert.equal(page.total, KNN_MAX_RESULTS)
     assert.equal(page.totalPages, KNN_MAX_RESULTS / 10)
   })
 
-  it("returns an empty page when nothing matches", async () => {
+  it("returns null when the KNN finds no neighbours at all", async () => {
     const { client } = await searchOver([])
 
-    assert.deepEqual(await semanticSearchVerses(client, "nada", 1, 10), {
-      verses: [],
-      total: 0,
-      currentPage: 1,
-      totalPages: 0,
+    assert.equal(await semanticSearchVerses(client, "nada", 1, 10), null)
+  })
+
+  // "xqzvw" got 100 verses: a KNN search always answers. The best match's
+  // distance and the words of the search decide whether it should.
+  describe("a search nothing in the Bible answers", () => {
+    const scored = async (bestSimilarity: number, wordsInText: string[]) => {
+      const calls: { index: string; query: string; options: unknown }[] = []
+      const fake = createFakeRedis((index, query, options) => {
+        calls.push({ index, query, options })
+        if (index === "idx:verseText") {
+          const found = wordsInText.some((word) => query.includes(`"${word}"`))
+          return { total: found ? 3 : 0, documents: [] }
+        }
+        return {
+          total: ranked.length,
+          documents: ranked.map((verseKey, rank) => ({
+            id: verseKey.replace("verse:", "embedding:"),
+            // Distances, best first, from the best match's similarity down.
+            value: {
+              score: String(1 - bestSimilarity + rank / 100),
+            },
+          })),
+        }
+      })
+      for (const verseKey of ranked) {
+        const [, bookId, chapter, verse] = verseKey.split(":")
+        await fake.client.json.set(verseKey, "$", {
+          bookId,
+          chapterNumber: Number(chapter),
+          number: Number(verse),
+        })
+      }
+      return { client: fake.client, calls }
+    }
+
+    it("answers nothing when the match is weak and no word is in the text", async () => {
+      const { client, calls } = await scored(0.12, [])
+
+      assert.deepEqual(await pageOf(client, "xqzvw", 1, 10), {
+        verses: [],
+        total: 0,
+        currentPage: 1,
+        totalPages: 0,
+      })
+      assert.deepEqual(
+        calls.filter((c) => c.index === "idx:verseText").map((c) => c.query),
+        ['@normalizedText: "xqzvw" @number:[1 +inf]'],
+      )
+    })
+
+    it("answers a weak match whose word is in the text («paz» peaks at 0.17)", async () => {
+      const { client } = await scored(0.17, ["paz"])
+
+      const page = await pageOf(client, "Paz", 1, 10)
+
+      assert.equal(page.total, 4)
+    })
+
+    it("looks words up without accents, and skips the stopwords", async () => {
+      const { client, calls } = await scored(0.15, ["fe"])
+
+      const page = await pageOf(client, "a oração de fé", 1, 10)
+
+      assert.equal(page.total, 4)
+      // "a" and "de" are in every chapter; "fé" is short but a real search.
+      assert.deepEqual(
+        calls.filter((c) => c.index === "idx:verseText").map((c) => c.query),
+        [
+          '@normalizedText: "oracao" @number:[1 +inf]',
+          '@normalizedText: "fe" @number:[1 +inf]',
+        ],
+      )
+    })
+
+    it("answers a strong match without looking at the words", async () => {
+      const { client, calls } = await scored(MIN_SIMILARITY + 0.02, [])
+
+      const page = await pageOf(client, "ansiedade", 1, 10)
+
+      assert.equal(page.total, 4)
+      assert.equal(calls.filter((c) => c.index === "idx:verseText").length, 0)
+    })
+
+    it("answers as before when the index gives no score", async () => {
+      const { client } = await searchOver(ranked)
+
+      const page = await pageOf(client, "xqzvw", 1, 10)
+
+      assert.equal(page.total, 4)
+    })
+
+    it("asks the index for each verse's distance", async () => {
+      const { client, calls } = await scored(0.5, [])
+
+      await pageOf(client, "amar", 1, 10)
+
+      assert.deepEqual((calls[0].options as { RETURN: string[] }).RETURN, [
+        "score",
+      ])
     })
   })
 
@@ -186,7 +290,7 @@ describe("semanticSearchVerses", () => {
     const { client, calls } = await searchOver(ranked)
     stub.requests.length = 0
 
-    const page = await semanticSearchVerses(client, "amar", 11, 10)
+    const page = await pageOf(client, "amar", 11, 10)
 
     assert.equal(page.total, 0)
     assert.equal(stub.requests.length, 0)

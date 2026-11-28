@@ -1,11 +1,60 @@
-import type { createClient } from "redis"
+import type { createClient, SearchReply } from "redis"
 import {
   EMBEDDING_INDEX,
   EMBEDDING_KEY_PREFIX,
 } from "../../util/embeddingIndex"
 import { jsonMGet } from "../../util/jsonMGet"
+import { normalizeText } from "../../util/normalizeText"
 import { toFloat32Buffer } from "../../util/vectorBuffer"
 import { generateQueryEmbedding } from "../voyage/embeddings"
+import { escapeSearchPhrase } from "./searchVerses"
+
+// The only field the query returns: the KNN's cosine distance to the query,
+// which is computed, not loaded. The verse key comes from the document id.
+type EmbeddingDocument = {
+  score?: string
+}
+
+// A KNN search always answers, nonsense included: "xqzvw" got 100 verses. On
+// voyage-context-4 (calibrated Nov 2026 on 64 chapters, 2,075 verses), nonsense
+// and off-topic queries peaked at a cosine similarity of 0.10-0.20, real ones
+// at 0.24-0.64. Single words overlap the noise ("paz" 0.17, "fé" 0.19), but
+// they are in the text, and nonsense isn't: below this similarity a search
+// with no word of its own in the Bible answers nothing.
+export const MIN_SIMILARITY = 0.22
+
+// Words in every chapter, which tell nothing apart. Others count, however
+// short: "fé", "paz", "luz" and "pão" are real searches.
+const STOPWORDS = new Set(
+  (
+    "a ao aos as com como da das de dela dele do dos e ela ele em entre era " +
+    "essa esse esta este eu foi ha isso isto ja lhe mais mas me meu minha " +
+    "na nao nas no nos o os ou para pela pelo por que quem se sem ser seu " +
+    "sua tambem te tem teu tu tua um uma vos"
+  ).split(" "),
+)
+
+// Whether any of the search's words, stopwords aside, is in a verse, as the
+// full-text search would find it.
+export const hasWordInText = async (
+  client: ReturnType<typeof createClient>,
+  search: string,
+): Promise<boolean> => {
+  const words = new Set(
+    normalizeText(search)
+      .split(/[^\p{L}]+/u)
+      .filter((word) => word.length > 1 && !STOPWORDS.has(word)),
+  )
+  for (const word of words) {
+    const found = (await client.ft.search(
+      "idx:verseText",
+      `@normalizedText: "${escapeSearchPhrase(word)}" @number:[1 +inf]`,
+      { LIMIT: { from: 0, size: 0 } },
+    )) as SearchReply
+    if (found?.total) return true
+  }
+  return false
+}
 
 // KNN search is capped at this many results; results beyond this offset are unavailable.
 export const KNN_MAX_RESULTS = 100
@@ -46,7 +95,7 @@ export const semanticSearchVerses = async (
   search: string,
   page: number,
   pageSize: number,
-): Promise<VersePage> => {
+): Promise<VersePage | null> => {
   const offset = (page - 1) * pageSize
 
   // Defensive: the controller rejects out-of-window pages with a 400 so this
@@ -67,7 +116,7 @@ export const semanticSearchVerses = async (
   // Always ask for the full window: a KNN query returns at most K documents, so
   // sizing K to the requested page would make `total` (and therefore
   // `totalPages`) shrink to that page and hide the rest of the results.
-  const results = (await client.ft.searchNoContent(
+  const results = (await client.ft.search(
     EMBEDDING_INDEX,
     `*=>[KNN ${KNN_CANDIDATES} @embedding $vec AS score]`,
     {
@@ -82,15 +131,26 @@ export const semanticSearchVerses = async (
         BY: "score",
         DIRECTION: "ASC",
       },
+      RETURN: ["score"],
       // RediSearch's default 500 ms timeout returns whatever it has found so
       // far, often nothing, with no error. A KNN over KNN_CANDIDATES regularly
       // takes longer than that in production, so it gets its own bound.
       TIMEOUT: KNN_TIMEOUT_MS,
       DIALECT: 2,
     },
-  )) as unknown as { total: number; documents: string[] }
+  )) as SearchReply
 
-  if (!results || results.total === 0) {
+  // A KNN over a complete index always has neighbours, so none means the
+  // index is not usable; null tells that apart from "nothing relevant".
+  if (!results || results.total === 0) return null
+
+  const ranked = results.documents.map(
+    (doc) => doc.value as unknown as EmbeddingDocument,
+  )
+
+  // The index scores by cosine distance, so similarity is 1 - score.
+  const best = 1 - Number(ranked[0]?.score)
+  if (best < MIN_SIMILARITY && !(await hasWordInText(client, search))) {
     return {
       verses: [],
       total: 0,
@@ -102,9 +162,9 @@ export const semanticSearchVerses = async (
   // The cap is applied to the whole ranked window before paging, so pages
   // never overlap and `total` counts what can actually be paged through.
   const rankedKeys = capPerChapter(
-    // Ids only (no field loads): embedding:<b>:<c>:<v> -> verse:<b>:<c>:<v>.
+    // embedding:<b>:<c>:<v> -> verse:<b>:<c>:<v>, so no hash field is loaded.
     results.documents.map(
-      (id) => `verse:${id.slice(EMBEDDING_KEY_PREFIX.length)}`,
+      (doc) => `verse:${doc.id.slice(EMBEDDING_KEY_PREFIX.length)}`,
     ),
   ).slice(0, KNN_MAX_RESULTS)
   const totalResults = rankedKeys.length
