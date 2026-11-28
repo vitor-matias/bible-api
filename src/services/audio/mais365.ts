@@ -494,3 +494,46 @@ export const findTitle = (
   }
   return undefined
 }
+
+/**
+ * How far back a start may move to where the voice comes in, seconds: the
+ * first word comes 0.1-0.5 s before Whisper times it (Zacarias 4: 0.38 s).
+ * Further back is the silence before a short jingle (Dia 191: 1 s of it
+ * before «Segundo Livro das Crónicas»), not before the voice.
+ */
+export const ONSET_REACH = 0.5
+
+/**
+ * Where the voice comes in, at or before a reading's start: Whisper times
+ * the first word after the jingle late («Zacarias 4» heard as «carias
+ * quatro», 0.4 s in). `levels` are dB over `frame`-second frames from
+ * `from` to just after `at`. The voice's level is the loudest within 0.2 s
+ * of `at`; going back from `at`, the first 80 ms in a row 20 dB below it is
+ * the gap before the voice, which comes in where that gap ends. Shorter
+ * dips are inside a word (the «c» of «Zacarias» is 40 ms of silence). `at`
+ * itself when there is no gap within ONSET_REACH (the voice over the
+ * jingle, or straight on from the reading before).
+ */
+export const voiceOnset = (
+  levels: number[],
+  frame: number,
+  from: number,
+  at: number,
+): number => {
+  const index = (time: number) => Math.round((time - from) / frame)
+  const near = levels.slice(Math.max(0, index(at) - 2), index(at + 0.2) + 1)
+  if (!near.length) return at
+  const voice = Math.max(...near)
+  const gap = Math.max(1, Math.round(0.08 / frame))
+  const reach = Math.max(0, index(at - ONSET_REACH))
+  let quiet = 0
+  for (let i = Math.min(index(at), levels.length - 1); i >= reach; i--) {
+    quiet = levels[i] <= voice - 20 ? quiet + 1 : 0
+    if (quiet === gap) {
+      // Never later than Whisper's time: a frame's end can round past it.
+      const end = from + (i + gap) * frame
+      return Math.min(at, Math.round(end * 100) / 100)
+    }
+  }
+  return at
+}

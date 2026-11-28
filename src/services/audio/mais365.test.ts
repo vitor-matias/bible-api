@@ -11,6 +11,7 @@ import {
   mergePlan,
   parseReadings,
   pastHeadingPause,
+  voiceOnset,
 } from "./mais365"
 
 const books: BookName[] = [
@@ -772,5 +773,37 @@ describe("mergePlan", () => {
   it("drops a chapter a day no longer reads", () => {
     const merged = mergePlan(before, { chapters: {}, days: [{ day: 155 }] })
     assert.equal(merged.chapters["mrk/3"], undefined)
+  })
+})
+
+describe("voiceOnset", () => {
+  // Dia 269 in 20 ms frames from 486.06 s: the jingle's tail, «Zacarias 4»
+  // from 486.34, the «c» a 40 ms dip at 486.60. Whisper put it at 486.78.
+  const dia269 = [
+    -40.2, -39.3, -37.9, -40.6, -42.0, -38.5, -40.8, -43.9, -40.0, -40.5, -43.4,
+    -42.4, -40.6, -41.8, -20.9, -18.0, -17.2, -17.5, -18.4, -19.7, -21.3, -19.1,
+    -15.6, -16.2, -16.2, -20.7, -31.7, -40.0, -42.6, -27.3, -27.1, -15.3, -15.6,
+    -16.2, -16.1, -17.6, -17.6, -16.5,
+  ]
+
+  it("goes back past a word's own dip to where the voice comes in", () => {
+    assert.equal(voiceOnset(dia269, 0.02, 486.06, 486.68), 486.34)
+  })
+
+  it("stays put without a gap within reach (the voice over the jingle)", () => {
+    const steady = dia269.map(() => -18)
+    assert.equal(voiceOnset(steady, 0.02, 486.06, 486.68), 486.68)
+  })
+
+  it("never goes back further than ONSET_REACH", () => {
+    // Dia 191: silence 1 s back, before a short jingle, not the voice.
+    const early = [...Array(10).fill(-60), ...Array(60).fill(-18)]
+    assert.equal(voiceOnset(early, 0.02, 485.5, 486.68), 486.68)
+  })
+
+  it("never moves a start later", () => {
+    // The gap ends 0.02 s past Whisper's time.
+    const late = [-18, -18, -60, -60, -60, -60, -18, -18, -18]
+    assert.equal(voiceOnset(late, 0.02, 486.6, 486.68), 486.68)
   })
 })
